@@ -3,6 +3,12 @@ set(MCU cortex-m3)
 set(FPU_FLAGS "")
 
 if(NOT NATIVE_BUILD)
+
+  # Add MCU specific flags
+  add_link_options(
+    -mcpu=cortex-m3 -mfloat-abi=soft
+  )
+
   # STM32 HAL/LL library
   set(STM32CUBE_DIR ${THIRDPARTY_DIR}/STM32F2xx_HAL_Driver)
   include_directories(${STM32CUBE_DIR}/Inc)
@@ -17,6 +23,7 @@ if(NOT NATIVE_BUILD)
     ${STM32CUBE_DIR}/Src/stm32f2xx_ll_exti.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_ll_adc.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_ll_spi.c
+    ${STM32CUBE_DIR}/Src/stm32f2xx_ll_usb.c
     # HAL drivers
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_pwr.c
@@ -24,6 +31,8 @@ if(NOT NATIVE_BUILD)
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_rcc.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_rtc.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_i2c.c
+    ${STM32CUBE_DIR}/Src/stm32f2xx_hal_pcd.c
+    ${STM32CUBE_DIR}/Src/stm32f2xx_hal_pcd_ex.c
     )
 
   target_compile_options(stm32cube_ll PRIVATE -DUSE_FULL_LL_DRIVER)
@@ -47,7 +56,7 @@ set(STM32_STDPERIPH_DIR ${STM32LIB_DIR}/STM32F2xx_StdPeriph_Driver)
 
 add_library(stm32_stdperiph OBJECT EXCLUDE_FROM_ALL
   targets/common/arm/stm32/f2/system_stm32f2xx.c
-  ${STM32LIB_DIR}/CMSIS/Device/ST/STM32F2xx/Source/Templates/gcc_ride7/startup_stm32f2xx.s
+  boards/generic_stm32/startup/startup_stm32f205xx.s
   ${STM32_STDPERIPH_DIR}/src/misc.c
   ${STM32_STDPERIPH_DIR}/src/stm32f2xx_gpio.c
   ${STM32_STDPERIPH_DIR}/src/stm32f2xx_dbgmcu.c

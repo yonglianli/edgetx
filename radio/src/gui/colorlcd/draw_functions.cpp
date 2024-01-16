@@ -25,7 +25,7 @@
 #include "libopenui.h"
 #include "theme.h"
 
-#include "watchdog_driver.h"
+#include "hal/watchdog_driver.h"
 
 coord_t drawStringWithIndex(BitmapBuffer * dc, coord_t x, coord_t y, const char * str, int idx, LcdFlags flags, const char * prefix, const char * suffix)
 {
@@ -185,7 +185,7 @@ void drawShutdownAnimation(uint32_t duration, uint32_t totalDuration,
 
 void drawFatalErrorScreen(const char * message)
 {
-  backlightEnable(100);
+  backlightEnable(BACKLIGHT_LEVEL_MAX);
   lcdInitDirectDrawing();
   lcd->clear(COLOR2FLAGS(BLACK));
   lcd->drawText(LCD_W/2, LCD_H/2-20, message, FONT(XL)|CENTERED|COLOR2FLAGS(WHITE));
@@ -283,8 +283,9 @@ void drawTrimMode(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t phase, uint8_
 
   if (mode == TRIM_MODE_NONE) {
     dc->drawText(x, y, "--", att);
-  }
-  else {
+  } else if (mode == TRIM_MODE_3POS) {
+    dc->drawText(x, y, "3P", att);
+  } else {
     char s[2];
     s[0] = (mode % 2 == 0) ? ':' : '+';
     s[1] = '0'+p;

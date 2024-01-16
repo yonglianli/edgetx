@@ -30,9 +30,9 @@
 
 #include "board_common.h"
 #include "hal.h"
-#include "hal/serial_port.h"
 
-#include "watchdog_driver.h"
+#include "hal/serial_port.h"
+#include "hal/watchdog_driver.h"
 
 #if defined(HARDWARE_TOUCH)
 #include "tp_gt911.h"
@@ -173,8 +173,8 @@ void SDRAM_Init();
   #define BATTERY_MAX       115 // 11.5V
 #endif
 
-bool UNEXPECTED_SHUTDOWN();
-void SET_POWER_REASON(uint32_t value);
+// bool UNEXPECTED_SHUTDOWN();
+// void SET_POWER_REASON(uint32_t value);
 
 #if defined(__cplusplus) && !defined(SIMU)
 extern "C" {
@@ -238,47 +238,20 @@ void backlightEnable(uint8_t dutyCycle);
 void backlightFullOn();
 bool isBacklightEnabled();
 
-#define BACKLIGHT_ENABLE()                                               \
-  {                                                                      \
-    boardBacklightOn = true;                                             \
-    backlightEnable(globalData.unexpectedShutdown                        \
-                        ? BACKLIGHT_LEVEL_MAX                            \
-                        : BACKLIGHT_LEVEL_MAX - currentBacklightBright); \
-  }
-#define BACKLIGHT_DISABLE()                                                 \
-  {                                                                         \
-    boardBacklightOn = false;                                               \
-    backlightEnable(globalData.unexpectedShutdown ? BACKLIGHT_LEVEL_MAX     \
-                    : ((g_eeGeneral.blOffBright == BACKLIGHT_LEVEL_MIN) &&  \
-                       (g_eeGeneral.backlightMode != e_backlight_mode_off)) \
-                        ? 0                                                 \
-                        : g_eeGeneral.blOffBright);                         \
+#define BACKLIGHT_ENABLE()                                         \
+  {                                                                \
+    boardBacklightOn = true;                                       \
+    backlightEnable(BACKLIGHT_LEVEL_MAX - currentBacklightBright); \
   }
 
-#if !defined(SIMU)
-void usbJoystickUpdate();
-#endif
-#if defined(PCBX12S)
-  #define USB_NAME                     "FrSky Horus"
-  #define USB_MANUFACTURER             'F', 'r', 'S', 'k', 'y', ' ', ' ', ' '  /* 8 bytes */
-  #define USB_PRODUCT                  'H', 'o', 'r', 'u', 's', ' ', ' ', ' '  /* 8 Bytes */
-#elif defined(RADIO_T16)
-  #define USB_NAME                     "Jumper T16"
-  #define USB_MANUFACTURER             'J', 'u', 'm', 'p', 'e', 'r', ' ', ' '  /* 8 bytes */
-  #define USB_PRODUCT                  'T', '1', '6', ' ', ' ', ' ', ' ', ' '  /* 8 Bytes */  
-#elif defined(RADIO_T18)
-  #define USB_NAME                     "Jumper T18"
-  #define USB_MANUFACTURER             'J', 'u', 'm', 'p', 'e', 'r', ' ', ' '  /* 8 bytes */
-  #define USB_PRODUCT                  'T', '1', '8', ' ', ' ', ' ', ' ', ' '  /* 8 Bytes */
-#elif defined(RADIO_TX16S)
-  #define USB_NAME                     "RM TX16S"
-  #define USB_MANUFACTURER             'R', 'M', '_', 'T', 'X', ' ', ' ', ' '  /* 8 bytes */
-  #define USB_PRODUCT                  'R', 'M', ' ', 'T', 'X', '1', '6', 'S'  /* 8 Bytes */
-#elif defined(PCBX10)
-  #define USB_NAME                     "FrSky X10"
-  #define USB_MANUFACTURER             'F', 'r', 'S', 'k', 'y', ' ', ' ', ' '  /* 8 bytes */
-  #define USB_PRODUCT                  'X', '1', '0', ' ', ' ', ' ', ' ', ' '  /* 8 Bytes */
-#endif
+#define BACKLIGHT_DISABLE()                                               \
+  {                                                                       \
+    boardBacklightOn = false;                                             \
+    backlightEnable(((g_eeGeneral.blOffBright == BACKLIGHT_LEVEL_MIN) &&  \
+                     (g_eeGeneral.backlightMode != e_backlight_mode_off)) \
+                        ? 0                                               \
+                        : g_eeGeneral.blOffBright);                       \
+  }
 
 #if defined(__cplusplus) && !defined(SIMU)
 }

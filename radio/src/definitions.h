@@ -46,6 +46,7 @@
   #define UNUSED(x)           ((void)(x)) /* to avoid warnings */
 #endif
 
+#if !defined(__ALIGNED)
 #if defined(SIMU)
   #define __ALIGNED(x)
   #define __SECTION_USED(s)
@@ -53,27 +54,30 @@
   #define __ALIGNED(x)        __attribute__((aligned(x)))
   #define __SECTION_USED(s)   __attribute__((section(s), used))
 #endif
+#endif
 
 #if defined(SIMU)
   #define __DMA
-#elif (defined(STM32F4) && !defined(BOOT)) || defined(SDRAM)
-  #define __DMA               __attribute__((section(".ram"), aligned(4)))
 #else
-  #define __DMA               __ALIGNED(4)
+  #define __DMA               __attribute__((section(".ram"), aligned(4)))
 #endif
 
 #if defined(CCMRAM) && !defined(SIMU)
-  #define __CCMRAM  __attribute__((section(".ccm"), aligned(4)))
+  #define __CCMRAM            __attribute__((section(".ccm"), aligned(4)))
 #else
   #define __CCMRAM
 #endif
 
 #if defined(SDRAM) && !defined(SIMU)
   #define __SDRAM   __attribute__((section(".sdram"), aligned(4)))
-  #define __NOINIT  __attribute__((section(".noinit")))
+#if defined(COLORLCD)
+  #define __SDRAMFONTS __attribute__((section(".sdram_fonts"), aligned(4)))
+#endif
 #else
   #define __SDRAM   __DMA
-  #define __NOINIT
+#if defined(COLORLCD)
+  #define __SDRAMFONTS __DMA
+#endif
 #endif
 
 #if __GNUC__

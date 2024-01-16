@@ -30,6 +30,8 @@ static std::string getFMTrimStr(uint8_t mode, bool spacer)
   mode &= 0x1F;
   if (mode == TRIM_MODE_NONE)
     return "-";
+  if (mode == TRIM_MODE_3POS)
+    return "3P";
   std::string str((mode & 1) ? "+" : "=");
   if (spacer) str += " ";
   mode >>= 1;
@@ -135,18 +137,21 @@ class FlightModeEdit : public Page
         tr_btn->setWidth(LV_DPI_DEF / 2);
         tr_btn->setHeight(33);
 
-        tr_mode[t] = new Choice(trim, rect_t{}, 0, 2 * MAX_FLIGHT_MODES - 1,
+        tr_mode[t] = new Choice(trim, rect_t{}, 0, 2 * MAX_FLIGHT_MODES,
                                 GET_DEFAULT(tr->mode),
                                 [=](int val) {
                                   tr->mode = val;
                                   showControls(t, tr->mode);
+                                  SET_DIRTY();
                                 });
         tr_mode[t]->setTextHandler([=](uint8_t mode) { return getFMTrimStr(mode, true); });
         tr_mode[t]->setAvailableHandler([=](int mode) {
-          return ((mode & 1) == 0) || ((mode >> 1) != index);
+          if (index > 0)
+            return ((mode & 1) == 0) || ((mode >> 1) != index) || (mode == TRIM_MODE_3POS);
+          return (mode == 0) || (mode == TRIM_MODE_3POS);
         });
 
-        tr_value[t] = new NumberEdit(trim, rect_t{}, 
+        tr_value[t] = new NumberEdit(trim, rect_t{0, 0, 70, 0}, 
                                      g_model.extendedTrims ? -512 : -128, g_model.extendedTrims ? 512 : 128,
                                      GET_SET_DEFAULT(tr->value));
 
@@ -176,9 +181,9 @@ class FlightModeEdit : public Page
     void showControls(int trim, uint8_t mode)
     {
       bool checked = (mode != TRIM_MODE_NONE);
-      bool showValue = (index == 0) || ((mode & 1) || (mode >> 1 == index));
+      bool showValue = (index == 0 && mode != TRIM_MODE_3POS) || ((mode & 1) || (mode >> 1 == index));
 
-      if (checked && (index > 0)) {
+      if (checked) {
         lv_obj_clear_flag(tr_mode[trim]->getLvObj(), LV_OBJ_FLAG_HIDDEN);
       } else {
         lv_obj_add_flag(tr_mode[trim]->getLvObj(), LV_OBJ_FLAG_HIDDEN);
@@ -292,7 +297,7 @@ class FMStyle
       lv_obj_set_style_flex_grow(obj, 2, LV_PART_MAIN);
       lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
       lv_obj_set_height(obj, LV_SIZE_CONTENT);
-      lv_obj_add_flag(obj, LV_OBJ_FLAG_EVENT_BUBBLE);
+      lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
       lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_SPACE_AROUND);
 
       return obj;
@@ -318,7 +323,7 @@ class FMStyle
     {
       auto obj = lv_obj_create(parent);
       lv_obj_add_style(obj, &fmTrimContStyle, LV_PART_MAIN);
-      lv_obj_add_flag(obj, LV_OBJ_FLAG_EVENT_BUBBLE);
+      lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
 
       return obj;
     }
@@ -403,13 +408,11 @@ class FlightModeBtn : public Button
     fmID = fmStyle.newId(lvobj);
 
     lv_obj_t* container = fmStyle.newGroup(lvobj);
-    lv_obj_set_user_data(container, this);
 
     fmName = fmStyle.newName(container);
     fmSwitch = fmStyle.newSwitch(container);
 
     lv_obj_t* trims_cont = fmStyle.newTrimCont(container);
-    lv_obj_set_user_data(trims_cont, this);
 
     for (int i = 0; i < keysGetMaxTrims(); i += 1) {
       fmTrimMode[i] = fmStyle.newTrimMode(trims_cont, i);

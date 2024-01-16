@@ -24,7 +24,7 @@
 #include "stm32_hal_ll.h"
 
 #include "hal.h"
-#include "watchdog_driver.h"
+#include "hal/watchdog_driver.h"
 
 static volatile uint32_t _ms_ticks;
 
@@ -75,11 +75,6 @@ void watchdogSuspend(uint32_t timeout)
 {
   watchdogTimeout = timeout;
 }
-
-#define __weak __attribute__((weak))
-
-__weak void per10ms() {}
-__weak void per5ms() {}
 
 static inline void _interrupt_1ms()
 {

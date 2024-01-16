@@ -40,12 +40,6 @@
 #define GET_MODULE_PPM_DELAY(idx)                (g_model.moduleData[idx].ppm.delay * 50 + 300)
 #define GET_TRAINER_PPM_DELAY()                  (g_model.trainerData.delay * 50 + 300)
 
-#if defined(HARDWARE_TRAINER_EXTERNAL_MODULE)
-  #define IS_TRAINER_EXTERNAL_MODULE()           (g_model.trainerData.mode == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE || g_model.trainerData.mode == TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE)
-#else
-  #define IS_TRAINER_EXTERNAL_MODULE()           false
-#endif
-
 #define IS_PLAY_FUNC(func)             ((func) >= FUNC_PLAY_SOUND && func <= FUNC_PLAY_VALUE)
 
 #if defined(GVARS)
@@ -60,7 +54,6 @@
   #define IS_HAPTIC_FUNC(func)         (0)
 #endif
 
-#define HAS_ENABLE_PARAM(func)         ((func) < FUNC_FIRST_WITHOUT_ENABLE || (func == FUNC_BACKLIGHT))
 #if defined(COLORLCD)
 #define HAS_REPEAT_PARAM(func)         (IS_PLAY_FUNC(func) || IS_HAPTIC_FUNC(func) || func == FUNC_PLAY_SCRIPT || func == FUNC_SET_SCREEN)
 #else
@@ -74,9 +67,9 @@
 #define CFN_CH_INDEX(p)                ((p)->all.param)
 #define CFN_GVAR_INDEX(p)              ((p)->all.param)
 #define CFN_TIMER_INDEX(p)             ((p)->all.param)
-#define CFN_PLAY_REPEAT(p)             ((p)->active)
+#define CFN_PLAY_REPEAT(p)             ((p)->repeat)
 #define CFN_PLAY_REPEAT_MUL            1
-#define CFN_PLAY_REPEAT_NOSTART        0xFF
+#define CFN_PLAY_REPEAT_NOSTART        -1
 #define CFN_GVAR_MODE(p)               ((p)->all.mode)
 #define CFN_PARAM(p)                   ((p)->all.val)
 #define CFN_RESET(p)                   ((p)->active=0, (p)->clear.val1=0, (p)->clear.val2=0)
@@ -170,7 +163,13 @@ enum CurveRefType {
 #define TRIM_ELE    (-2)
 #define TRIM_THR    (-3)
 #define TRIM_AIL    (-4)
-#if defined(PCBHORUS)
+#if defined(PCBPL18)
+  #define TRIM_T5   (-5)
+  #define TRIM_T6   (-6)
+  #define TRIM_T7   (-7)
+  #define TRIM_T8   (-8)
+  #define TRIM_LAST TRIM_T8
+#elif defined(PCBHORUS)
   #define TRIM_T5   (-5)
   #define TRIM_T6   (-6)
   #define TRIM_LAST TRIM_T6
@@ -267,6 +266,7 @@ enum SwashType {
 
 #define TRIMS_ARRAY_SIZE  8
 #define TRIM_MODE_NONE  0x1F  // 0b11111
+#define TRIM_MODE_3POS  (2 * MAX_FLIGHT_MODES)
 
 #define IS_MANUAL_RESET_TIMER(idx)     (g_model.timers[idx].persistent == 2)
 

@@ -108,7 +108,7 @@
 #define TR_PLAY_TRACK                  TR3("\200\201Stopa", "\200\201Stopa", "Přehrát wav")
 #define TR_PLAY_VALUE                  TR3("\200\201Hlásit ", "\200\201Hlásit ", "Hlásit stav")
 #define TR_SF_HAPTIC                   "Vibrovat"
-#define TR_SF_PLAY_SCRIPT              "Lua Skript"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "Lua Skript")
 #define TR_SF_BG_MUSIC                 TR3("\200\201Hudba","\200\201Hudba","Hudba")
 #define TR_SF_BG_MUSIC_PAUSE           TR3("\200\201Hudba ||","\200\201Hudba ||","Hudba pauza")
 #define TR_SF_LOGS                     "Loguj na SD"
@@ -173,12 +173,22 @@
 #define TR_HATSOPT                     "Pouze trimy","Pouze tlačítka","Přepinatelné","Globální"
 #define TR_HATSMODE_TRIMS              "Režim kloboučků: Trimy"
 #define TR_HATSMODE_KEYS                "Režim kloboučků: Tlačítka"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT         "Normal","Invertován"
 #else
-  #define TR_ROTARY_ENC_OPT         "Normal","Invertován","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT         "Normal","Invertován","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -229,7 +239,7 @@
 
 #if defined(PCBTARANIS) || defined(PCBHORUS)
   #define TR_ENTER                     "[ENTER]"
-#elif defined(PCBNV14)
+#elif defined(PCBNV14) || defined(PCBPL18)
   #define TR_ENTER                     "[DALŠÍ]"
 #else
   #define TR_ENTER                     "[MENU]"
@@ -330,7 +340,7 @@
 #define TR_SLOWUP                      TR3("Zpomalení(+)", "Zpomal(\176)", "Zpomalení(\176)")
 #define TR_MIXES                       "MIXER"
 #define TR_CV                          "K"
-#if defined(PCBNV14)
+#if defined(PCBNV14) || defined(PCBPL18)
 #define TR_GV                          "GP"
 #else
 #define TR_GV                          TR("G", "GP")
@@ -1053,6 +1063,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] pro vybrani souboru"
   #define TR_BL_FLASH_KEY             "Drzet dlouze [R TRIM] pro nahrani"
   #define TR_BL_EXIT_KEY              " [L TRIM] pro ukonceni"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1190,7 +1210,7 @@
 
 // Main menu
 #define TR_MAIN_MENU_SELECT_MODEL       "Vybrat\nmodel"
-#define TR_MAIN_MENU_MANAGE_MODELS      "Nastavení\nmodelu"
+#define TR_MAIN_MENU_MANAGE_MODELS      "Správa\nmodelů"
 #define TR_MAIN_MENU_MODEL_NOTES        "Poznámky\nmodelu"
 #define TR_MAIN_MENU_CHANNEL_MONITOR    "Monitor\nkanálů"
 #define TR_MAIN_MENU_MODEL_SETTINGS     "Nastavení\nmodelu"
@@ -1260,3 +1280,7 @@
 #define TR_SELECT_MENU_ALL        "All"
 #define TR_SELECT_MENU_CLR        "Clear"
 #define TR_SELECT_MENU_INV        "Invert"
+
+#define TR_SORT_ORDERS            "Název A-Z","Název Z-A","Nejméne používané","Nejvíce používané"
+#define TR_SORT_MODELS_BY         "Seřadit modely podle"
+#define TR_CREATE_NEW             "Vytvořit"

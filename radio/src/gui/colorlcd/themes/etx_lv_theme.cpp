@@ -52,6 +52,7 @@ static lv_theme_t theme;
 #define LV_STYLE_CONST_SINGLE_INIT(var_name, prop, value)               \
   const lv_style_t var_name = {.v_p = {.value1 = {.num = value}},       \
                                .prop1 = prop,                           \
+                               .is_const = 0,                           \
                                .has_group = 1 << ((prop & 0x1FF) >> 4), \
                                .prop_cnt = 1}
 
@@ -59,9 +60,10 @@ static lv_theme_t theme;
 // Copied from lv_style.h and modified to compile with ARM GCC C++
 #define LV_STYLE_CONST_MULTI_INIT(var_name, prop_array)            \
   const lv_style_t var_name = {.v_p = {.const_props = prop_array}, \
-                               .prop1 = LV_STYLE_PROP_ANY,                         \
+                               .prop1 = 0,                         \
+                               .is_const = 1,                      \
                                .has_group = 0xFF,                  \
-                               .prop_cnt = (sizeof(prop_array) / sizeof((prop_array)[0]))}
+                               .prop_cnt = 0}
 
 // Opacity
 LV_STYLE_CONST_SINGLE_INIT(bg_opacity_transparent, LV_STYLE_BG_OPA,
@@ -201,15 +203,14 @@ LV_STYLE_CONST_MULTI_INIT(modal_title, modal_title_props);
 
 // Check Box
 const lv_style_const_prop_t cb_marker_props[] = {
-    LV_STYLE_CONST_PAD_TOP(3),  LV_STYLE_CONST_PAD_BOTTOM(3),
-    LV_STYLE_CONST_PAD_LEFT(3), LV_STYLE_CONST_PAD_RIGHT(3),
+    LV_STYLE_CONST_PAD_TOP(2),  LV_STYLE_CONST_PAD_BOTTOM(2),
+    LV_STYLE_CONST_PAD_LEFT(2), LV_STYLE_CONST_PAD_RIGHT(2),
     LV_STYLE_PROP_INV,
 };
 LV_STYLE_CONST_MULTI_INIT(cb_marker, cb_marker_props);
 
 const lv_style_const_prop_t cb_marker_checked_props[] = {
     LV_STYLE_CONST_BG_IMG_SRC(LV_SYMBOL_OK),
-    LV_STYLE_CONST_TEXT_FONT(LV_FONT_DEFAULT),
     LV_STYLE_PROP_INV,
 };
 LV_STYLE_CONST_MULTI_INIT(cb_marker_checked, cb_marker_checked_props);
@@ -691,7 +692,6 @@ void etx_checkbox_constructor(const lv_obj_class_t* class_p, lv_obj_t* obj)
   etx_add_border(obj, LV_PART_INDICATOR);
   lv_obj_add_style(obj, (lv_style_t*)&bg_opacity_cover, LV_PART_INDICATOR);
   lv_obj_add_style(obj, (lv_style_t*)&rounded, LV_PART_INDICATOR);
-  lv_obj_add_style(obj, (lv_style_t*)&pad_zero, LV_PART_INDICATOR);
   lv_obj_add_style(obj, (lv_style_t*)&cb_marker, LV_PART_INDICATOR);
   lv_obj_add_style(obj, &styles->bg_color[COLOR_THEME_PRIMARY2_INDEX],
                    LV_PART_INDICATOR);
@@ -708,6 +708,8 @@ void etx_checkbox_constructor(const lv_obj_class_t* class_p, lv_obj_t* obj)
 
   lv_obj_add_style(obj, (lv_style_t*)&disabled,
                    LV_PART_INDICATOR | LV_STATE_DISABLED);
+
+  lv_checkbox_set_text_static(obj, "");
 }
 
 void bubble_popup_constructor(const lv_obj_class_t* class_p, lv_obj_t* obj)
@@ -961,8 +963,8 @@ const lv_obj_class_t etx_checkbox_class = {
     .destructor_cb = nullptr,
     .user_data = nullptr,
     .event_cb = nullptr,
-    .width_def = LV_PCT(100),
-    .height_def = LV_PCT(100),
+    .width_def = 25,
+    .height_def = 25,
     .editable = LV_OBJ_CLASS_EDITABLE_INHERIT,
     .group_def = LV_OBJ_CLASS_GROUP_DEF_INHERIT,
     .instance_size = sizeof(lv_checkbox_t),

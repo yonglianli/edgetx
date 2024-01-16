@@ -99,7 +99,7 @@
 #define TR_PLAY_TRACK                  "音源再生"
 #define TR_PLAY_VALUE                  TR("Play Val","再生値")
 #define TR_SF_HAPTIC                   "バイブレート"
-#define TR_SF_PLAY_SCRIPT              "LUAスクリプト"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "LUAスクリプト")
 #define TR_SF_BG_MUSIC                 "BGM再生"
 #define TR_SF_BG_MUSIC_PAUSE           "BGM一時停止"
 #define TR_SF_LOGS                     "SDログ出力"
@@ -165,12 +165,22 @@
 #define TR_HATSOPT                     "トリムのみ","キーのみ","スイッチ","すべて"
 #define TR_HATSMODE_TRIMS              "アナログスティック: トリム"
 #define TR_HATSMODE_KEYS               "アナログスティック: キー"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT         "標準","リバース"
 #else
-  #define TR_ROTARY_ENC_OPT         "標準","リバース","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT         "標準","リバース","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -1037,6 +1047,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] to select file"
   #define TR_BL_FLASH_KEY             "Hold [R TRIM] long to flash"
   #define TR_BL_EXIT_KEY              " [L TRIM] to exit"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1243,3 +1263,7 @@
 #define TR_SELECT_MENU_ALL        "All"
 #define TR_SELECT_MENU_CLR        "Clear"
 #define TR_SELECT_MENU_INV        "Invert"
+
+#define TR_SORT_ORDERS            "名称 A-Z順","名称 Z-A順","利用の少ない順","利用の多い順"
+#define TR_SORT_MODELS_BY         "モデルをソート"
+#define TR_CREATE_NEW             "作成"

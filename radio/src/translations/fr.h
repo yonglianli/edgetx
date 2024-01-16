@@ -102,10 +102,10 @@
 #define TR_SF_RGBLEDS                  "RGB leds"
  
 #define TR_SOUND                       "Jouer son"
-#define TR_PLAY_TRACK                  "Jouer fichier"
+#define TR_PLAY_TRACK                  TR("Ply Trk", "Jouer fichier")
 #define TR_PLAY_VALUE                  "Lire valeur"
 #define TR_SF_HAPTIC                   "Vibreur"
-#define TR_SF_PLAY_SCRIPT              "Script Lua"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "Script Lua")
 #define TR_SF_BG_MUSIC                 "Musique"
 #define TR_SF_BG_MUSIC_PAUSE           "Pause Musique"
 #define TR_SF_LOGS                     "Logs SD"
@@ -170,12 +170,22 @@
 #define TR_HATSOPT                     "Trims uniquement","Touches uniquement","Commutable","Global"
 #define TR_HATSMODE_TRIMS              "Mode joystick: trims"
 #define TR_HATSMODE_KEYS               "Mode joystick: touches"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT         "Normal","Inversé"
 #else
-  #define TR_ROTARY_ENC_OPT         "Normal","Inversé","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT         "Normal","Inversé","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -226,7 +236,7 @@
 
 #if defined(PCBFRSKY)
   #define TR_ENTER                     "[ENTER]"
-#elif defined(PCBNV14)
+#elif defined(PCBNV14) || defined(PCBPL18)
   #define TR_ENTER                     "[SUIVANT]"
 #else
   #define TR_ENTER                     "[MENU]"
@@ -327,7 +337,7 @@
 #define TR_SLOWUP                      "Ralenti haut"
 #define TR_MIXES                       "MIXEUR"
 #define TR_CV                          "CV"
-#if defined(PCBNV14)
+#if defined(PCBNV14) || defined(PCBPL18)
 #define TR_GV                          "VG"
 #else
 #define TR_GV                          TR("G", "VG")
@@ -433,7 +443,7 @@
 #define TR_MEM_USED_SCRIPT             "Script(B): "
 #define TR_MEM_USED_WIDGET             "Widget(B): "
 #define TR_MEM_USED_EXTRA              "Extra(B): "
-#define TR_STACK_MIX                   "Mix: "
+#define TR_STACK_MIX                   "Mixeurs: "
 #define TR_STACK_AUDIO                 "Audio: "
 #define TR_GPS_FIX_YES                 "Fix: Oui"
 #define TR_GPS_FIX_NO                  "Fix: Non"
@@ -557,10 +567,10 @@
 #define TR_PITCH_AT_ZERO               "Tonalité min"
 #define TR_PITCH_AT_MAX                "Tonalité max"
 #define TR_REPEAT_AT_ZERO              TR("Répét. zéro", "Répéter zéro")
-#define TR_BATT_CALIB                  "Calib. batt"
+#define TR_BATT_CALIB                  TR("Calib. batt", "Calib. batterie")
 #define TR_CURRENT_CALIB               "Calib. cour"
 #define TR_VOLTAGE                     TR(INDENT "Tension",INDENT "Source tension")
-#define TR_SELECT_MODEL                "Sélect. modèle"
+#define TR_SELECT_MODEL                "Sélection Modèle"
 #define TR_MANAGE_MODELS               "GESTION MODÈLES"
 #define TR_MODELS                      "Modèles"
 #define TR_SELECT_MODE                 "Sélection mode"
@@ -663,7 +673,7 @@
 #define TR_COPROC                      "CoProc."
 #define TR_COPROC_TEMP                 "Temp. CM \016>"
 #define TR_TEMPWARNING                 INDENT "Surchauffe"
-#define TR_TTL_WARNING                 "Attention: utiliser val. logique 3.3V"
+#define TR_TTL_WARNING                 "Attention: utiliser valeur logique 3.3 V"
 #define TR_FUNC                        "Fonction"
 #define TR_V1                          "V1"
 #define TR_V2                          "V2"
@@ -1058,6 +1068,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] pour sélect. fichier"
   #define TR_BL_FLASH_KEY             "Appui long [R TRIM] pour flasher"
   #define TR_BL_EXIT_KEY              " [L TRIM] pour quitter"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1270,3 +1290,7 @@
 #define TR_SELECT_MENU_ALL        "All"
 #define TR_SELECT_MENU_CLR        "Clear"
 #define TR_SELECT_MENU_INV        "Invert"
+
+#define TR_SORT_ORDERS            "Nom A-Z","Nom Z-A","Dernier utilisé","Couramment utilisé"
+#define TR_SORT_MODELS_BY         "Trier modèles par"
+#define TR_CREATE_NEW             "Créer"

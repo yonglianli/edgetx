@@ -23,6 +23,7 @@
 #include "hal/trainer_driver.h"
 #include "hal/switch_driver.h"
 #include "hal/rotary_encoder.h"
+#include "hal/usb_driver.h"
 
 #include "board.h"
 #include "boards/generic_stm32/module_ports.h"
@@ -42,45 +43,8 @@
   #include "flysky_gimbal_driver.h"
 #endif
 
-enum PowerReason {
-  SHUTDOWN_REQUEST = 0xDEADBEEF,
-  SOFTRESET_REQUEST = 0xCAFEDEAD,
-};
-
-constexpr uint32_t POWER_REASON_SIGNATURE = 0x0178746F;
-
-bool UNEXPECTED_SHUTDOWN()
-{
-#if defined(SIMU) || defined(NO_UNEXPECTED_SHUTDOWN)
-  return false;
-#else
-  if (WAS_RESET_BY_WATCHDOG())
-    return true;
-  else if (WAS_RESET_BY_SOFTWARE())
-    return RTC->BKP0R != SOFTRESET_REQUEST;
-  else
-    return RTC->BKP1R == POWER_REASON_SIGNATURE && RTC->BKP0R != SHUTDOWN_REQUEST;
-#endif
-}
-
-void SET_POWER_REASON(uint32_t value)
-{
-  RTC->BKP0R = value;
-  RTC->BKP1R = POWER_REASON_SIGNATURE;
-}
-
 HardwareOptions hardwareOptions;
 bool boardBacklightOn = false;
-
-void watchdogInit(unsigned int duration)
-{
-  IWDG->KR = 0x5555;      // Unlock registers
-  IWDG->PR = 3;           // Divide by 32 => 1kHz clock
-  IWDG->KR = 0x5555;      // Unlock registers
-  IWDG->RLR = duration;
-  IWDG->KR = 0xAAAA;      // reload
-  IWDG->KR = 0xCCCC;      // start
-}
 
 #if !defined(BOOT)
 #include "opentx.h"
@@ -96,7 +60,6 @@ void boardInit()
                          SD_RCC_AHB1Periph |
                          AUDIO_RCC_AHB1Periph |
                          TELEMETRY_RCC_AHB1Periph |
-                         TRAINER_RCC_AHB1Periph |
                          BT_RCC_AHB1Periph |
                          AUDIO_RCC_AHB1Periph |
                          HAPTIC_RCC_AHB1Periph |
@@ -121,13 +84,8 @@ void boardInit()
                          ENABLE);
 
 #if defined(RADIO_FAMILY_T16)
-  if (FLASH_OB_GetBOR() != OB_BOR_LEVEL3)
-  {
-    FLASH_OB_Unlock();
-    FLASH_OB_BORConfig(OB_BOR_LEVEL3);
-    FLASH_OB_Launch();
-    FLASH_OB_Lock();
-  }
+  void board_set_bor_level();
+  board_set_bor_level();
 #endif
 
   pwrInit();
@@ -137,9 +95,10 @@ void boardInit()
   (defined(INTERNAL_MODULE_PXX1) || defined(INTERNAL_MODULE_PXX2))
   pulsesSetModuleInitCb(_intmodule_heartbeat_init);
   pulsesSetModuleDeInitCb(_intmodule_heartbeat_deinit);
+  trainerSetChangeCb(_intmodule_heartbeat_trainer_hook);
 #endif
 
-  init_trainer();
+  board_trainer_init();
   pwrOn();
   delaysInit();
 
@@ -231,7 +190,7 @@ void boardOff()
   hapticDone();
 
   rtcDisableBackupReg();
-  RTC->BKP0R = SHUTDOWN_REQUEST;
+  // RTC->BKP0R = SHUTDOWN_REQUEST;
 
   pwrOff();
 
@@ -258,6 +217,5 @@ void boardOff()
 
 bool isBacklightEnabled()
 {
-  if (globalData.unexpectedShutdown) return true;
   return boardBacklightOn;
 }

@@ -18,22 +18,18 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#if !defined(BOOT) && defined(USE_HATS_AS_KEYS)
-#include "opentx.h"
-#endif
-
 #include "keys.h"
 
 #include "opentx_helpers.h"
 #include "definitions.h"
 
 #include "timers_driver.h"
-#include "watchdog_driver.h"
+#include "hal/watchdog_driver.h"
 #include "hal/rotary_encoder.h"
+#include "dataconstants.h"
 
-// required by watchdog macro..
-#if !defined(SIMU)
-#include "stm32_cmsis.h"
+#if !defined(BOOT) && defined(USE_HATS_AS_KEYS)
+#include "opentx.h"
 #endif
 
 // long key press minimum duration (x10ms),

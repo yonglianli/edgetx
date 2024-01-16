@@ -103,10 +103,10 @@
 #define TR_SF_RGBLEDS                  "RGB leds"
 
 #define TR_SOUND                       "Spil lyd"
-#define TR_PLAY_TRACK                  TR("Afspil lyd", "Afspil lydfil")
+#define TR_PLAY_TRACK                  TR("Ply Trk", "Afspil lydfil")
 #define TR_PLAY_VALUE                  TR("Spil Vær","Spil Værdi")
 #define TR_SF_HAPTIC                   TR("Vib.", "Vibration")
-#define TR_SF_PLAY_SCRIPT              "Lua Script"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "Lua Script")
 #define TR_SF_BG_MUSIC                 "BgMusik"
 #define TR_SF_BG_MUSIC_PAUSE           "BgMusik ||"
 #define TR_SF_LOGS                     "SD Log"
@@ -168,12 +168,22 @@
 #define TR_HATSOPT                     "Kun trim","Kun knap","Trim / Knap", "Global"
 #define TR_HATSMODE_TRIMS              "Joystik: Trim"
 #define TR_HATSMODE_KEYS               "Joystik: Knap"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT            "Normal","Invers"
 #else
-  #define TR_ROTARY_ENC_OPT            "Normal","Invers","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT            "Normal","Invers","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -1046,6 +1056,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] for at bruge fil"
   #define TR_BL_FLASH_KEY             "[R TRIM] lang til for at starte"
   #define TR_BL_EXIT_KEY              "[L TRIM] for at forlade"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1265,3 +1285,7 @@
 #define TR_SELECT_MENU_ALL        "Alle"
 #define TR_SELECT_MENU_CLR        "Slet"
 #define TR_SELECT_MENU_INV        "Invers"
+
+#define TR_SORT_ORDERS            "Navn A-Z","Navn Z-A","Sidst anvendt","Mest anvendt"
+#define TR_SORT_MODELS_BY         "Sorter modeller"
+#define TR_CREATE_NEW             "Opret"

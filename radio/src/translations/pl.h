@@ -97,10 +97,10 @@
 #define TR_SF_RGBLEDS         "RGB leds"
  
 #define TR_SOUND              "GrajDźwięk"
-#define TR_PLAY_TRACK         "GrajŚcieżk"
+#define TR_PLAY_TRACK         TR("Ply Trk", "GrajŚcieżk")
 #define TR_PLAY_VALUE         TR("Graj Wart","GrajWartoś")
 #define TR_SF_HAPTIC          "Wibracje"
-#define TR_SF_PLAY_SCRIPT     "SkryptyLua"
+#define TR_SF_PLAY_SCRIPT     TR("Lua", "SkryptyLua")
 #define TR_SF_BG_MUSIC        "Muz. tła"
 #define TR_SF_BG_MUSIC_PAUSE  "Muz. tła ||"
 #define TR_SF_LOGS            "Logi->SD"
@@ -161,12 +161,22 @@
 #define TR_HATSOPT              "Tylko trymy","Tylko przyciski","Przełączane","Globalne"
 #define TR_HATSMODE_TRIMS       "Tryb grzybków: trymy"
 #define TR_HATSMODE_KEYS        "Tryb grzybków: przyciski"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT  "Normal","Inverted"
 #else
-  #define TR_ROTARY_ENC_OPT  "Normal","Inverted","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT  "Normal","Inverted","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -216,7 +226,7 @@
 
 #if defined(PCBTARANIS) || defined(PCBHORUS)
   #define TR_ENTER                     "[ENTER]"
-#elif defined(PCBNV14)
+#elif defined(PCBNV14) || defined(PCBPL18)
   #define TR_ENTER                     "[NEXT]"
 #else
   #define TR_ENTER                     "[MENU]"
@@ -318,7 +328,7 @@
 #define TR_SLOWUP              "Spowoln.(+)"
 #define TR_MIXES               "MIKSERY"
 #define TR_CV                  "Kr"
-#if defined(PCBNV14)
+#if defined(PCBNV14) || defined(PCBPL18)
 #define TR_GV                  "ZG"
 #else
 #define TR_GV                  TR("G", "ZG")
@@ -1039,6 +1049,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] aby wybrac plik"
   #define TR_BL_FLASH_KEY             "Przytrzymaj [R TRIM] aby flashowac"
   #define TR_BL_EXIT_KEY              " [L TRIM] aby wyjsc"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1247,3 +1267,7 @@
 #define TR_SELECT_MENU_ALL        "All"
 #define TR_SELECT_MENU_CLR        "Clear"
 #define TR_SELECT_MENU_INV        "Invert"
+
+#define TR_SORT_ORDERS            "Nazwa A-Z","Nazwa Z-A","Najrzadziej użyty","Najczęściej użyty"
+#define TR_SORT_MODELS_BY         "Sortuj modele"
+#define TR_CREATE_NEW             "Utwórz"

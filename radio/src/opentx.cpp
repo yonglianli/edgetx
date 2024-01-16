@@ -29,9 +29,11 @@
 #include "hal/adc_driver.h"
 #include "hal/switch_driver.h"
 #include "hal/storage.h"
+#include "hal/watchdog_driver.h"
+#include "hal/abnormal_reboot.h"
+#include "hal/usb_driver.h"
 
 #include "timers_driver.h"
-#include "watchdog_driver.h"
 
 #include "switches.h"
 #include "inactivity_timer.h"
@@ -53,6 +55,10 @@
   #include "switch_warn_dialog.h"
 
   #include "gui/colorlcd/LvglWrapper.h"
+#endif
+
+#if defined(CROSSFIRE)
+#include "telemetry/crossfire.h"
 #endif
 
 #if !defined(SIMU)
@@ -83,7 +89,9 @@ safetych_t safetyCh[MAX_OUTPUT_CHANNELS];
 // __DMA for the MSC_BOT_Data member
 union ReusableBuffer reusableBuffer __DMA;
 
+#if !defined(SIMU)
 uint8_t* MSC_BOT_Data = reusableBuffer.MSC_BOT_Data;
+#endif
 
 #if defined(DEBUG_LATENCY)
 uint8_t latencyToggleSwitch = 0;
@@ -162,7 +170,7 @@ void per10ms()
 #endif
 
   if (trimsCheckTimer) trimsCheckTimer--;
-  if (trainerInputValidityTimer) trainerInputValidityTimer--;
+  trainerDecTimer();
 
   if (trimsDisplayTimer)
     trimsDisplayTimer--;
@@ -284,6 +292,8 @@ void generalDefault()
 
 #if defined(DEFAULT_INTERNAL_MODULE)
     g_eeGeneral.internalModule = DEFAULT_INTERNAL_MODULE;
+    if (g_eeGeneral.internalModule == MODULE_TYPE_CROSSFIRE)
+      g_eeGeneral.internalModuleBaudrate = min(1, (int)CROSSFIRE_MAX_INTERNAL_BAUDRATE);  // 921k if possible
 #endif
 
   adcCalibDefaults();
@@ -305,7 +315,7 @@ void generalDefault()
 
 #if defined(SURFACE_RADIO)
   g_eeGeneral.stickMode = 0;
-  g_eeGeneral.templateSetup = 1;
+  g_eeGeneral.templateSetup = 0;
 #elif defined(DEFAULT_MODE)
   g_eeGeneral.stickMode = DEFAULT_MODE - 1;
   g_eeGeneral.templateSetup = DEFAULT_TEMPLATE_SETUP;
@@ -362,7 +372,9 @@ void generalDefault()
   // disable Custom Script
   g_eeGeneral.modelCustomScriptsDisabled = true;
 
- g_eeGeneral.hatsMode = HATSMODE_SWITCHABLE;
+#if defined(USE_HATS_AS_KEYS)
+  g_eeGeneral.hatsMode = HATSMODE_SWITCHABLE;
+#endif
 
   g_eeGeneral.chkSum = 0xFFFF;
 }
@@ -467,7 +479,7 @@ int getTrimValue(uint8_t phase, uint8_t idx)
   int result = 0;
   for (uint8_t i=0; i<MAX_FLIGHT_MODES; i++) {
     trim_t v = getRawTrimValue(phase, idx);
-    if (v.mode == TRIM_MODE_NONE) {
+    if (v.mode == TRIM_MODE_NONE || v.mode == TRIM_MODE_3POS) {
       return result;
     }
     else {
@@ -490,7 +502,7 @@ bool setTrimValue(uint8_t phase, uint8_t idx, int trim)
 {
   for (uint8_t i=0; i<MAX_FLIGHT_MODES; i++) {
     trim_t & v = flightModeAddress(phase)->trim[idx];
-    if (v.mode == TRIM_MODE_NONE)
+    if (v.mode == TRIM_MODE_NONE || v.mode == TRIM_MODE_3POS)
       return false;
     unsigned int p = v.mode >> 1;
     if (p == phase || phase == 0) {
@@ -891,6 +903,7 @@ void checkTrims()
     uint8_t phase;
     int before;
     bool thro;
+    trim_t tmode = getRawTrimValue(mixerCurrentFlightMode, idx);
 
     trimsDisplayTimer = 200; // 2 seconds
     trimsDisplayMask |= (1<<idx);
@@ -912,17 +925,17 @@ void checkTrims()
     thro = (idx==inputMappingConvertMode(inputMappingGetThrottle()) && g_model.thrTrim);
 #endif
     int8_t trimInc = g_model.trimInc + 1;
-    int8_t v = (trimInc==-1) ? min(32, abs(before)/4+1) : (1 << trimInc); // TODO flash saving if (trimInc < 0)
+    int16_t v = (trimInc==-1) ? min(32, abs(before)/4+1) : (1 << trimInc); // TODO flash saving if (trimInc < 0)
     if (thro) v = 4; // if throttle trim and trim throttle then step=4
 #if defined(GVARS)
-    if (TRIM_REUSED(idx)) v = 1;
+    if (TRIM_REUSED(idx)) v = tmode.mode == TRIM_MODE_3POS ? RESX : 1;
 #endif
     int16_t after = (k&1) ? before + v : before - v;   // positive = k&1
     bool beepTrim = true;
 
-    if (!thro && before!=0 && ((!(after < 0) == (before < 0)) || after==0)) { //forcing a stop at centered trim when changing sides
+    if (!thro && before!=0 && tmode.mode != TRIM_MODE_3POS &&
+        ((!(after < 0) == (before < 0)) || after==0)) { //forcing a stop at centered trim when changing sides
       after = 0;
-      beepTrim = true;
       AUDIO_TRIM_MIDDLE();
       pauseTrimEvents(event);
     }
@@ -1064,11 +1077,9 @@ void edgeTxClose(uint8_t shutdown)
   if (sessionTimer > 0) {
     g_eeGeneral.globalTimer += sessionTimer;
     sessionTimer = 0;
+    storageDirty(EE_GENERAL);
   }
 
-
-  g_eeGeneral.unexpectedShutdown = 0;
-  storageDirty(EE_GENERAL);
   storageCheck(true);
 
   while (IS_PLAYING(ID_PLAY_PROMPT_BASE + AU_BYE)) {
@@ -1122,11 +1133,6 @@ void edgeTxResume()
 #endif
 
   referenceSystemAudioFiles();
-
-  if (!g_eeGeneral.unexpectedShutdown) {
-    g_eeGeneral.unexpectedShutdown = 1;
-    storageDirty(EE_GENERAL);
-  }
 }
 
 #define INSTANT_TRIM_MARGIN 10 /* around 1% */
@@ -1140,8 +1146,9 @@ void instantTrim()
   evalInputs(e_perout_mode_notrainer);
 
   auto controls = adcGetMaxInputs(ADC_INPUT_MAIN);
-  for (uint8_t stick = 0; stick < controls; stick++) {
-    if (stick != inputMappingConvertMode(inputMappingGetThrottle())) { // don't instant trim the throttle stick
+  for (uint8_t st = 0; st < controls; st++) {
+    uint8_t stick = inputMappingConvertMode(st);
+    if (stick != inputMappingGetThrottle()) { // don't instant trim the throttle stick
       bool addTrim = false;
       int16_t delta = 0;
       uint8_t trimFlightMode = getTrimFlightMode(mixerCurrentFlightMode, stick);
@@ -1273,7 +1280,7 @@ void runStartupAnimation()
     }
   }
 
-  if (duration < PWR_PRESS_DURATION_MIN() || duration >= PWR_PRESS_DURATION_MAX) {
+  if (duration <= PWR_PRESS_DURATION_MIN() || duration >= PWR_PRESS_DURATION_MAX) {
     boardOff();
   }
 }
@@ -1386,24 +1393,9 @@ void edgeTxInit()
 #endif
 #endif
 
-  // Radios handle UNEXPECTED_SHUTDOWN() differently:
-  //  * radios with WDT and EEPROM and CPU controlled power use Reset status register
-  //    and eeGeneral.unexpectedShutdown
-  //  * radios with SDCARD model storage use Reset status register and special
-  //    variables in RAM. They can not use eeGeneral.unexpectedShutdown
-  //  * radios without CPU controlled power can only use Reset status register (if available)
-  if (UNEXPECTED_SHUTDOWN()) {
-    TRACE("Unexpected Shutdown detected");
-    globalData.unexpectedShutdown = 1;
-  }
-
-#if defined(RTC_BACKUP_RAM)
-  SET_POWER_REASON(0);
-#endif
-
 #if defined(SDCARD)
-  // SDCARD related stuff, only done if not unexpectedShutdown
-  if (!globalData.unexpectedShutdown) {
+  // SDCARD related stuff, only enable if normal boot
+  if (!UNEXPECTED_SHUTDOWN()) {
 
     if (!sdMounted())
       sdInit();
@@ -1435,16 +1427,17 @@ void edgeTxInit()
 #endif // defined(SDCARD)
 
 #if defined(EEPROM)
-  if (!radioSettingsValid)
+  if (!radioSettingsValid) {
     storageReadRadioSettings();
+  }
   storageReadCurrentModel();
 #else
   (void)radioSettingsValid;
 #endif
 
 #if defined(COLORLCD) && defined(LUA)
-  if (!globalData.unexpectedShutdown) {
-    // ??? lua widget state must be prepared before the call to storageReadAll()
+  if (!UNEXPECTED_SHUTDOWN()) {
+    // lua widget state must be prepared before the call to storageReadAll()
     luaInitThemesAndWidgets();
   }
 #endif
@@ -1452,7 +1445,7 @@ void edgeTxInit()
   // handling of storage for radios that have no EEPROM
 #if !defined(EEPROM)
 #if defined(RTC_BACKUP_RAM) && !defined(SIMU)
-  if (globalData.unexpectedShutdown) {
+  if (UNEXPECTED_SHUTDOWN()) {
     // SDCARD not available, try to restore last model from RAM
     TRACE("rambackupRestore");
     rambackupRestore();
@@ -1464,7 +1457,7 @@ void edgeTxInit()
   storageReadAll();
 #endif
 #endif  // #if !defined(EEPROM)
-  
+
   initSerialPorts();
 
   currentSpeakerVolume = requiredSpeakerVolume = g_eeGeneral.speakerVolume + VOLUME_LEVEL_DEF;
@@ -1495,7 +1488,7 @@ void edgeTxInit()
     resetBacklightTimeout();
   }
 
-  if (!globalData.unexpectedShutdown) {
+  if (!UNEXPECTED_SHUTDOWN()) {
 
     uint8_t calibration_needed = !(startOptions & OPENTX_START_NO_CALIBRATION) && (g_eeGeneral.chkSum != evalChkSum());
 
@@ -1550,13 +1543,6 @@ void edgeTxInit()
     g_eeGeneral.bluetoothMode = oldBtMode;
 #endif
   }
-
-#if !defined(RTC_BACKUP_RAM)
-  if (!g_eeGeneral.unexpectedShutdown) {
-    g_eeGeneral.unexpectedShutdown = 1;
-    storageDirty(EE_GENERAL);
-  }
-#endif
 
 #if defined(GUI) && !defined(COLORLCD) && !defined(STARTUP_ANIMATION)
   lcdSetContrast();

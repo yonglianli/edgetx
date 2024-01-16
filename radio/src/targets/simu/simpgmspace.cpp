@@ -31,6 +31,7 @@
 
 #include "hal/adc_driver.h"
 #include "hal/rotary_encoder.h"
+#include "hal/usb_driver.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -535,7 +536,7 @@ void boardOff()
 
 void hapticOff() {}
 
-#if defined(PCBFRSKY) || defined(PCBFLYSKY)
+#if defined(PCBFRSKY) || defined(PCBNV14)
 HardwareOptions hardwareOptions;
 #endif
 

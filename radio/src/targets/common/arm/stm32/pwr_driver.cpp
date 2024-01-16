@@ -20,7 +20,7 @@
  */
 
 #include "board.h"
-#include "watchdog_driver.h"
+#include "hal/abnormal_reboot.h"
 
 void pwrInit()
 {
@@ -38,9 +38,11 @@ void pwrInit()
 #endif
 
   // Internal module power
+#if defined(HARDWARE_INTERNAL_MODULE)
   INTERNAL_MODULE_OFF();
   GPIO_InitStructure.GPIO_Pin = INTMODULE_PWR_GPIO_PIN;
   GPIO_Init(INTMODULE_PWR_GPIO, &GPIO_InitStructure);
+#endif
 
   // External module power
   EXTERNAL_MODULE_PWR_OFF();
@@ -68,6 +70,15 @@ void pwrInit()
   #endif
   GPIO_InitStructure.GPIO_Pin = PCBREV_GPIO_PIN;
   GPIO_Init(PCBREV_GPIO, &GPIO_InitStructure);
+  #if defined(PCBREV_TOUCH_GPIO_PIN)
+    #if defined(PCBREV_TOUCH_GPIO_PULL_UP)
+      GPIO_ResetBits(PCBREV_TOUCH_GPIO, PCBREV_TOUCH_GPIO_PIN);
+      GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+    #endif
+  GPIO_InitStructure.GPIO_Pin = PCBREV_TOUCH_GPIO_PIN;
+  GPIO_Init(PCBREV_TOUCH_GPIO, &GPIO_InitStructure);
+  #endif
+
   hardwareOptions.pcbrev = PCBREV_VALUE();
 #endif
 }

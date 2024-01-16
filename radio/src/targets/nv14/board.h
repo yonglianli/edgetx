@@ -27,9 +27,9 @@
 
 #include "board_common.h"
 #include "hal.h"
-#include "hal/serial_port.h"
 
-#include "watchdog_driver.h"
+#include "hal/serial_port.h"
+#include "hal/watchdog_driver.h"
 
 #define FLASHSIZE                       0x200000
 #define BOOTLOADER_SIZE                 0x20000
@@ -115,36 +115,17 @@ extern HardwareOptions hardwareOptions;
 #endif // defined(SIMU)
 
 #define EXTERNAL_MODULE_PWR_OFF         EXTERNAL_MODULE_OFF
-#define IS_UART_MODULE(port)            (port == INTERNAL_MODULE)
-#define IS_PXX2_INTERNAL_ENABLED()      (false)
 
 #if !defined(NUM_FUNCTIONS_SWITCHES)
 #define NUM_FUNCTIONS_SWITCHES        0
 #endif
 
-#define NUM_TRIMS_KEYS                  (NUM_TRIMS * 2)
-
-#define DEFAULT_STICK_DEADZONE          2
-
-// 2 pots without detent
-#define DEFAULT_POTS_CONFIG   \
-  (POT_WITHOUT_DETENT << 0) + \
-      (POT_WITHOUT_DETENT << 2)
+#define DEFAULT_STICK_DEADZONE        2
 
 #define BATTERY_WARN                  36 // 3.6V
 #define BATTERY_MIN                   35 // 3.5V
 #define BATTERY_MAX                   42 // 4.2V
-
-enum EnumPowerupState
-{
-  BOARD_POWER_OFF = 0xCAFEDEAD,
-  BOARD_POWER_ON = 0xDEADBEEF,
-  BOARD_STARTED = 0xBAADF00D,
-  BOARD_REBOOT = 0xC00010FF,
-};
-
-bool UNEXPECTED_SHUTDOWN();
-void SET_POWER_REASON(uint32_t value);
+#define BATTERY_DIVIDER               2942
 
 #if defined(__cplusplus) && !defined(SIMU)
 extern "C" {
@@ -196,36 +177,20 @@ void backlightEnable(uint8_t dutyCycle);
 void backlightFullOn();
 bool isBacklightEnabled();
 
-#define BACKLIGHT_ENABLE()                                               \
-  {                                                                      \
-    boardBacklightOn = true;                                             \
-    backlightEnable(globalData.unexpectedShutdown                        \
-                        ? BACKLIGHT_LEVEL_MAX                            \
-                        : BACKLIGHT_LEVEL_MAX - currentBacklightBright); \
+#define BACKLIGHT_ENABLE()                                         \
+  {                                                                \
+    boardBacklightOn = true;                                       \
+    backlightEnable(BACKLIGHT_LEVEL_MAX - currentBacklightBright); \
   }
 
-#define BACKLIGHT_DISABLE()                                                 \
-  {                                                                         \
-    boardBacklightOn = false;                                               \
-    backlightEnable(globalData.unexpectedShutdown ? BACKLIGHT_LEVEL_MAX     \
-                    : ((g_eeGeneral.blOffBright == BACKLIGHT_LEVEL_MIN) &&  \
-                       (g_eeGeneral.backlightMode != e_backlight_mode_off)) \
-                        ? 0                                                 \
-                        : g_eeGeneral.blOffBright);                         \
+#define BACKLIGHT_DISABLE()                                               \
+  {                                                                       \
+    boardBacklightOn = false;                                             \
+    backlightEnable(((g_eeGeneral.blOffBright == BACKLIGHT_LEVEL_MIN) &&  \
+                     (g_eeGeneral.backlightMode != e_backlight_mode_off)) \
+                        ? 0                                               \
+                        : g_eeGeneral.blOffBright);                       \
   }
-
-#if !defined(SIMU)
-void usbJoystickUpdate();
-#endif
-#if (PCBREV == EL18)
-#define USB_NAME                        "Flysky EL18"
-#define USB_MANUFACTURER                'F', 'l', 'y', 's', 'k', 'y', ' ', ' '  /* 8 bytes */
-#define USB_PRODUCT                     'E', 'L', '1', '8', ' ', ' ', ' ', ' '  /* 8 Bytes */
-#else
-#define USB_NAME                        "Flysky NV14"
-#define USB_MANUFACTURER                'F', 'l', 'y', 's', 'k', 'y', ' ', ' '  /* 8 bytes */
-#define USB_PRODUCT                     'N', 'V', '1', '4', ' ', ' ', ' ', ' '  /* 8 Bytes */
-#endif
 
 #if defined(__cplusplus) && !defined(SIMU)
 }
@@ -281,14 +246,9 @@ void hapticOn(uint32_t pwmPercent);
 #define DEBUG_BAUDRATE                  115200
 #define LUA_DEFAULT_BAUDRATE            115200
 
-extern uint8_t currentTrainerMode;
-void checkTrainerSettings();
-
 // Touch panel driver
 bool touchPanelEventOccured();
 struct TouchState touchPanelRead();
 struct TouchState getInternalTouchState();
-
-#define BATTERY_DIVIDER 2942
 
 #endif // _BOARD_H_

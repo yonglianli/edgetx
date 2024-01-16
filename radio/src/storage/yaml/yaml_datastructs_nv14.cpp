@@ -93,6 +93,7 @@ const struct YamlIdStr enum_Functions[] = {
   {  FUNC_SET_SCREEN, "SET_SCREEN"  },
   {  FUNC_DISABLE_AUDIO_AMP, "DISABLE_AUDIO_AMP"  },
   {  FUNC_RGB_LED, "RGB_LED"  },
+  {  FUNC_TEST, "TEST"  },
   {  0, NULL  }
 };
 const struct YamlIdStr enum_TimerModes[] = {
@@ -282,14 +283,15 @@ static const struct YamlNode struct_CustomFunctionData[] = {
   YAML_ENUM("func", 6, enum_Functions),
   YAML_CUSTOM("def",r_customFn,w_customFn),
   YAML_PADDING( 48 ),
-  YAML_PADDING( 8 ),
+  YAML_PADDING( 1 ),
+  YAML_PADDING( 7 ),
   YAML_END
 };
 static const struct YamlNode struct_RadioData[] = {
   YAML_UNSIGNED( "manuallyEdited", 1 ),
   YAML_SIGNED( "timezoneMinutes", 3 ),
-  YAML_ENUM("hatsMode", 2, enum_HatsMode),
   YAML_UNSIGNED( "ppmunit", 2 ),
+  YAML_ENUM("hatsMode", 2, enum_HatsMode),
   YAML_CUSTOM("semver",nullptr,w_semver),
   YAML_CUSTOM("board",nullptr,w_board),
   YAML_ARRAY("calib", 48, 20, struct_CalibData, NULL),
@@ -328,7 +330,7 @@ static const struct YamlNode struct_RadioData[] = {
   YAML_SIGNED_CUST( "beepLength", 3, r_5pos, w_5pos ),
   YAML_SIGNED_CUST( "hapticStrength", 3, r_5pos, w_5pos ),
   YAML_UNSIGNED( "gpsFormat", 1 ),
-  YAML_PADDING( 1 ),
+  YAML_UNSIGNED( "audioMuteEnable", 1 ),
   YAML_UNSIGNED_CUST( "speakerPitch", 8, r_spPitch, w_spPitch ),
   YAML_SIGNED_CUST( "speakerVolume", 8, r_vol, w_vol ),
   YAML_SIGNED_CUST( "vBatMin", 8, r_vbat_min, w_vbat_min ),
@@ -369,11 +371,9 @@ static const struct YamlNode struct_RadioData[] = {
   YAML_UNSIGNED( "blOffBright", 7 ),
   YAML_STRING("bluetoothName", 10),
   YAML_STRING("ownerRegistrationID", 8),
-  YAML_CUSTOM("rotEncDirection",r_rotEncDirection,nullptr),
-  YAML_UNSIGNED( "rotEncMode", 2 ),
+  YAML_PADDING( 3 ),
   YAML_SIGNED( "uartSampleMode", 2 ),
   YAML_UNSIGNED( "stickDeadZone", 3 ),
-  YAML_UNSIGNED( "audioMuteEnable", 1 ),
   YAML_STRING("selectedTheme", 26),
   YAML_UNSIGNED( "radioThemesDisabled", 1 ),
   YAML_UNSIGNED( "radioGFDisabled", 1 ),

@@ -107,10 +107,10 @@
 #define TR_SF_RGBLEDS                  "RGB leds"
  
 #define TR_SOUND                       "Spela ljud"
-#define TR_PLAY_TRACK                  "Spela upp"
+#define TR_PLAY_TRACK                  TR("Sp. upp", "Spela upp")
 #define TR_PLAY_VALUE                  "Säg värdet"
 #define TR_SF_HAPTIC                   "Haptisk"
-#define TR_SF_PLAY_SCRIPT              "Lua-skript"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "Lua-skript")
 #define TR_SF_BG_MUSIC                 "Musik"
 #define TR_SF_BG_MUSIC_PAUSE           "Pausa Musik"
 #define TR_SF_LOGS                     "Logga data"
@@ -173,7 +173,7 @@
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT             "Normal","Inverterad"
 #else
-  #define TR_ROTARY_ENC_OPT             "Normal","Inverterad","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT             "Normal","Inverterad","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #define TR_ON_ONE_SWITCHES              "PÅ","Ett"
@@ -183,6 +183,16 @@
   #define TR_HATSOPT                    "Endast trimm","Endast knapp","Ändringsbar","Global"
   #define TR_HATSMODE_TRIMS             "Hattläge: Trimmar"
   #define TR_HATSMODE_KEYS              "Hattläge: Knappar"
+  #define TR_HATSMODE_KEYS_HELP        "Vänster sida:\n"\
+                                       "   Höger = MDL\n"\
+                                       "   Upp = SYS\n"\
+                                       "   Ner = TELE\n"\
+                                       "\n"\
+                                       "Höger sida:\n"\
+                                       "   Vänster = PAGE<\n"\
+                                       "   Höger = PAGE>\n"\
+                                       "   Upp = PREV/INC\n"\
+                                       "   Ner = NEXT/DEC"
 #endif
 
 #if defined(IMU)
@@ -1071,6 +1081,16 @@
   #define TR_BL_SELECT_KEY              "[R TRIM] foer att vaelja fil"
   #define TR_BL_FLASH_KEY               "Tryck [R TRIM] foer att flasha"
   #define TR_BL_EXIT_KEY                " [L TRIM] för att avsluta"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Radera interna flashminnet"
+  #define TR_BL_ERASE_FLASH           "Radera flashminnet"
+  #define TR_BL_ERASE_FLASH_MSG       "Detta kan ta upp till 200s"
+  #define TR_BL_SELECT_KEY            " Tryck [TR4 Ner] foer att vaelja fil"
+  #define TR_BL_FLASH_KEY             " Haall [TR4 Ner] foer att flasha"
+  #define TR_BL_ERASE_KEY             " Haall [TR4 Ner] foer att radera"
+  #define TR_BL_EXIT_KEY              " Tryck [TR4 Upp] foer att avbryta"
 #endif
 
 // About screen
@@ -1284,6 +1304,10 @@
 #define TR_RADIO_MENU_TABS              "Radiomenyflikar"
 #define TR_MODEL_MENU_TABS              "Modellmenyflikar"
 
-#define TR_SELECT_MENU_ALL        "All"
-#define TR_SELECT_MENU_CLR        "Clear"
-#define TR_SELECT_MENU_INV        "Invert"
+#define TR_SELECT_MENU_ALL        "Allt"
+#define TR_SELECT_MENU_CLR        "Rensa"
+#define TR_SELECT_MENU_INV        "Invertera"
+
+#define TR_SORT_ORDERS            "Namn A-Z","Namn Z-A","Minst använda","Mest använda"
+#define TR_SORT_MODELS_BY         "Sortera modeller"
+#define TR_CREATE_NEW             "Skapa"

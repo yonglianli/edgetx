@@ -97,10 +97,10 @@
 #define TR_SF_RGBLEDS                  "RGB leds"
  
 #define TR_SOUND                       "播放聲音"
-#define TR_PLAY_TRACK                  "播放音頻文件"
+#define TR_PLAY_TRACK                  TR("Ply Trk", "播放音頻文件")
 #define TR_PLAY_VALUE                  "播放數值"
 #define TR_SF_HAPTIC                   "振動"
-#define TR_SF_PLAY_SCRIPT              "Lua腳本"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "Lua腳本")
 #define TR_SF_BG_MUSIC                 "播放背景音樂"
 #define TR_SF_BG_MUSIC_PAUSE           "暫停背景音樂"
 #define TR_SF_LOGS                     "記錄日誌到SD卡"
@@ -166,12 +166,22 @@
 #define TR_HATSOPT                     "微調","導航鍵","可切換","全局"
 #define TR_HATSMODE_TRIMS              "按鍵帽: 微調"
 #define TR_HATSMODE_KEYS               "按鍵帽: 導航鍵"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT          "正常","反向"
 #else
-  #define TR_ROTARY_ENC_OPT          "正常","反向","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT          "正常","反向","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -1037,6 +1047,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] to select file"
   #define TR_BL_FLASH_KEY             "Hold [R TRIM] long to flash"
   #define TR_BL_EXIT_KEY              " [L TRIM] to exit"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1108,8 +1128,8 @@
 #define TR_MENU_LUA                     STR_CHAR_LUA "LUA腳本"
 #define TR_MENU_STICKS                  STR_CHAR_STICK "搖桿"
 #define TR_MENU_POTS                    STR_CHAR_POT "旋鈕"
-#define TR_MENU_MIN                     STR_CHAR_FUNCTION "固定值MIN"
-#define TR_MENU_MAX                     STR_CHAR_FUNCTION "固定值MAX"
+#define TR_MENU_MIN                     STR_CHAR_FUNCTION "最小"
+#define TR_MENU_MAX                     STR_CHAR_FUNCTION "最大"
 #define TR_MENU_HELI                    STR_CHAR_CYC "斜盤混控CYC"
 #define TR_MENU_TRIMS                   STR_CHAR_TRIM "微調"
 #define TR_MENU_SWITCHES                STR_CHAR_SWITCH "開關"
@@ -1245,3 +1265,7 @@
 #define TR_SELECT_MENU_ALL        "All"
 #define TR_SELECT_MENU_CLR        "Clear"
 #define TR_SELECT_MENU_INV        "Invert"
+
+#define TR_SORT_ORDERS            "名稱 A-Z","名稱 Z-A","不常用","常用"
+#define TR_SORT_MODELS_BY         "排序"
+#define TR_CREATE_NEW             "新建"

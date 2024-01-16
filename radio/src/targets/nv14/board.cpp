@@ -27,6 +27,9 @@
 #include "hal/adc_driver.h"
 #include "hal/trainer_driver.h"
 #include "hal/switch_driver.h"
+#include "hal/abnormal_reboot.h"
+#include "hal/watchdog_driver.h"
+#include "hal/usb_driver.h"
 
 #include "globals.h"
 #include "sdcard.h"
@@ -37,66 +40,18 @@
 #include "timers_driver.h"
 
 #include "lcd_driver.h"
-#include "lcd_driver.h"
 #include "battery_driver.h"
 #include "touch_driver.h"
-#include "watchdog_driver.h"
 
 #include "bitmapbuffer.h"
 #include "colors.h"
 
 #include <string.h>
 
-#if defined(__cplusplus) && !defined(SIMU)
-extern "C" {
-#endif
-#include "usb_dcd_int.h"
-#include "usb_bsp.h"
-#if defined(__cplusplus) && !defined(SIMU)
-}
-#endif
-
 // common ADC driver
 extern const etx_hal_adc_driver_t _adc_driver;
 
-enum PowerReason {
-  SHUTDOWN_REQUEST = 0xDEADBEEF,
-  SOFTRESET_REQUEST = 0xCAFEDEAD,
-};
-
-constexpr uint32_t POWER_REASON_SIGNATURE = 0x0178746F;
-
-bool UNEXPECTED_SHUTDOWN()
-{
-#if defined(SIMU) || defined(NO_UNEXPECTED_SHUTDOWN)
-  return false;
-#else
-  if (WAS_RESET_BY_WATCHDOG())
-    return true;
-  else if (WAS_RESET_BY_SOFTWARE())
-    return RTC->BKP0R != SOFTRESET_REQUEST;
-  else
-    return RTC->BKP1R == POWER_REASON_SIGNATURE && RTC->BKP0R != SHUTDOWN_REQUEST;
-#endif
-}
-
-void SET_POWER_REASON(uint32_t value)
-{
-  RTC->BKP0R = value;
-  RTC->BKP1R = POWER_REASON_SIGNATURE;
-}
-
 HardwareOptions hardwareOptions;
-
-void watchdogInit(unsigned int duration)
-{
-  IWDG->KR = 0x5555;      // Unlock registers
-  IWDG->PR = 3;           // Divide by 32 => 1kHz clock
-  IWDG->KR = 0x5555;      // Unlock registers
-  IWDG->RLR = duration;   // 1.5 seconds nominal
-  IWDG->KR = 0xAAAA;      // reload
-  IWDG->KR = 0xCCCC;      // start
-}
 
 #if defined(SEMIHOSTING)
 extern "C" void initialise_monitor_handles();
@@ -109,7 +64,8 @@ void delay_self(int count)
        for (; count > 0; count--);
    }
 }
-#define RCC_AHB1PeriphMinimum (PWR_RCC_AHB1Periph |\
+
+#define RCC_AHB1PeriphMinimum (PWR_RCC_AHB1Periph |	\
                                LCD_RCC_AHB1Periph |\
                                BACKLIGHT_RCC_AHB1Periph |\
                                SDRAM_RCC_AHB1Periph \
@@ -118,7 +74,6 @@ void delay_self(int count)
                                AUDIO_RCC_AHB1Periph |\
                                MONITOR_RCC_AHB1Periph |\
                                TELEMETRY_RCC_AHB1Periph |\
-                               TRAINER_RCC_AHB1Periph |\
                                AUDIO_RCC_AHB1Periph |\
                                HAPTIC_RCC_AHB1Periph |\
                                INTMODULE_RCC_AHB1Periph |\
@@ -221,7 +176,7 @@ void boardInit()
   pwrInit();
   boardInitModulePorts();
 
-  init_trainer();
+  board_trainer_init();
   battery_charge_init();
   flysky_gimbal_init();
   timersInit();
@@ -310,12 +265,12 @@ void boardOff()
   if (usbPlugged())
   {
     delay_ms(100);  // Add a delay to wait for lcdOff
-    RTC->BKP0R = SOFTRESET_REQUEST;
+    // RTC->BKP0R = SOFTRESET_REQUEST;
     NVIC_SystemReset();
   }
   else
   {
-    RTC->BKP0R = SHUTDOWN_REQUEST;
+    // RTC->BKP0R = SHUTDOWN_REQUEST;
     pwrOff();
   }
 

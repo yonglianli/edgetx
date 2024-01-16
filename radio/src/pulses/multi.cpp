@@ -25,6 +25,7 @@
 #include "io/multi_protolist.h"
 #include "telemetry/multi.h"
 #include "mixer_scheduler.h"
+#include "hal/abnormal_reboot.h"
 
 // for the  MULTI protocol definition
 // see https://github.com/pascallanger/DIY-Multiprotocol-TX-Module
@@ -115,12 +116,9 @@ static void sendFailsafeChannels(uint8_t*& p_buf, uint8_t module)
 static void setupPulsesMulti(uint8_t*& p_buf, uint8_t module)
 {
   static int counter[2] = {0,0}; //TODO
-  static uint8_t invert[2] = {0x00,        //internal
-#if defined(PCBTARANIS) || defined(PCBHORUS) || defined(PCBNV14)
+  static uint8_t invert[2] = {
+    0x00,       //internal
     0x08        //external
-#else
-    0x00	//external
-#endif
   };
   uint8_t type=MULTI_NORMAL;
 
@@ -240,8 +238,10 @@ static void* multiInit(uint8_t module)
   getMultiModuleStatus(module).flags = 0;
 
 #if defined(MULTI_PROTOLIST)
-  TRACE("enablePulsesInternalModule(): trigger scan");
-  MultiRfProtocols::instance(module)->triggerScan();
+  if (!UNEXPECTED_SHUTDOWN()) {
+    TRACE("enablePulsesInternalModule(): trigger scan");
+    MultiRfProtocols::instance(module)->triggerScan();
+  }
 #endif
 
   return mod_st;

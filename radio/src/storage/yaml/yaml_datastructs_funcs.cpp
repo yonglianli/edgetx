@@ -38,7 +38,7 @@
 // ========
 //
 //  If any of these static_assert() fails, you need to check that
-//  the functions bellow are still applicable.
+//  the functions below are still applicable.
 //
 //  Please note that the sizes used here are those from the v220 format
 //  (see storage/conversions/yaml/datastructs_220.h)
@@ -1524,10 +1524,7 @@ static void r_customFn(void* user, uint8_t* data, uint32_t bitoffs,
       val++; val_len--;
 
       CFN_PARAM(cfn) = yaml_str2uint_ref(val, val_len);
-      if (val_len == 0 || val[0] != ',') return;
-      val++; val_len--;
-
-      eat_comma = false;
+      l_sep = 0;
     } else {
       return;
     }
@@ -1603,6 +1600,10 @@ static void r_customFn(void* user, uint8_t* data, uint32_t bitoffs,
     break;
   }
 
+  // Set 'enabled' to handle old format YAML files
+  // Will be updated if enabled flag is actually present
+  CFN_ACTIVE(cfn) = 1;
+
   if (eat_comma) {
     val += l_sep;
     val_len -= l_sep;
@@ -1613,29 +1614,40 @@ static void r_customFn(void* user, uint8_t* data, uint32_t bitoffs,
     val++; val_len--;
   }
 
-  if (HAS_ENABLE_PARAM(func)) {
-    // "0/1"
-    if (val_len > 0) {
-      if (val[0] == '0') {
-        CFN_ACTIVE(cfn) = 0;
-      } else if (val[0] == '1') {
-        CFN_ACTIVE(cfn) = 1;
-      }
+  // Handle old YAML files where only one of active/repeat was present
+  bool read_enable_flag = true;
+  if (HAS_REPEAT_PARAM(func)) {
+    // Check for 2 values to be parsed
+    uint8_t l_sep = find_sep(val, val_len);
+    if (l_sep == val_len) {
+      // only one more value - assume it is repeat
+      read_enable_flag = false;
     }
-  } else if (HAS_REPEAT_PARAM(func)) {
+  }
+
+  // Enable param
+  // "0/1"
+  if (val_len > 0 && read_enable_flag) {
+    CFN_ACTIVE(cfn) = (val[0] == '1') ? 1 : 0;
+    uint8_t l_sep = find_sep(val, val_len);
+
+    // Skip comma before optional repeat
+    val += l_sep;
+    val_len -= l_sep;
+    if (val_len == 0 || val[0] != ',')
+      return;
+    val++; val_len--;
+  }
+
+  if (HAS_REPEAT_PARAM(func)) {
     if (func == FUNC_PLAY_SCRIPT) {
       if (val_len == 2 && val[0] == '1' && val[1] == 'x')
         CFN_PLAY_REPEAT(cfn) = 1;
       else
         CFN_PLAY_REPEAT(cfn) = 0;
-    } else if (val_len == 2
-        && val[0] == '1'
-        && val[1] == 'x') {
+    } else if (val_len == 2 && val[0] == '1' && val[1] == 'x') {
       CFN_PLAY_REPEAT(cfn) = 0;
-    } else if (val_len == 3
-        && val[0] == '!'
-        && val[1] == '1'
-        && val[2] == 'x') {
+    } else if (val_len == 3 && val[0] == '!' && val[1] == '1' && val[2] == 'x') {
       CFN_PLAY_REPEAT(cfn) = CFN_PLAY_REPEAT_NOSTART;
     } else {
       // repeat time in seconds
@@ -1769,24 +1781,25 @@ static bool w_customFn(void* user, uint8_t* data, uint32_t bitoffs,
     break;
   }
 
-  if (HAS_ENABLE_PARAM(func)) {
-    if (add_comma) {
-      // ","
-      if (!wf(opaque,",",1)) return false;
-    }
-    // "0/1"
-    if (!wf(opaque,CFN_ACTIVE(cfn) ? "1":"0",1)) return false;
-  } else if (HAS_REPEAT_PARAM(func)) {
-    if (add_comma) {
-      // ","
-      if (!wf(opaque,",",1)) return false;
-    }
+  if (add_comma) {
+    // ","
+    if (!wf(opaque,",",1)) return false;
+  }
+
+  // Enable param
+  // "0/1"
+  if (!wf(opaque,CFN_ACTIVE(cfn) ? "1":"0",1)) return false;
+
+  if (HAS_REPEAT_PARAM(func)) {
+    // ","
+    if (!wf(opaque,",",1)) return false;
+
     if (func == FUNC_PLAY_SCRIPT) {
       if (!wf(opaque,(CFN_PLAY_REPEAT(cfn) == 0) ? "On" : "1x",2)) return false;
     } else if (CFN_PLAY_REPEAT(cfn) == 0) {
       // "1x"
       if (!wf(opaque,"1x",2)) return false;
-    } else if (CFN_PLAY_REPEAT(cfn) == CFN_PLAY_REPEAT_NOSTART) {
+    } else if (CFN_PLAY_REPEAT(cfn) == (int8_t)CFN_PLAY_REPEAT_NOSTART) {
       // "!1x"
       if (!wf(opaque,"!1x",3)) return false;
     } else {
@@ -1795,6 +1808,7 @@ static bool w_customFn(void* user, uint8_t* data, uint32_t bitoffs,
       if (!wf(opaque, str, strlen(str))) return false;
     }
   }
+
   if (!wf(opaque, "\"", 1)) return false;
   return true;
 }

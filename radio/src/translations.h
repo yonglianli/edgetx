@@ -181,6 +181,7 @@ extern const char STR_HATSMODE[];
 extern const char* const STR_HATSOPT[];
 extern const char STR_HATSMODE_TRIMS[];
 extern const char STR_HATSMODE_KEYS[];
+extern const char STR_HATSMODE_KEYS_HELP[];
 #endif
 
 extern const char* const STR_VTMRMODES[];
@@ -1266,6 +1267,12 @@ extern const char STR_USBJOYSTICK_APPLY_CHANGES[];
 extern const char STR_SELECT_MENU_ALL[];
 extern const char STR_SELECT_MENU_CLR[];
 extern const char STR_SELECT_MENU_INV[];
+
+#if defined(COLORLCD)
+extern const char* const STR_SORT_ORDERS[];
+extern const char STR_SORT_MODELS_BY[];
+extern const char STR_CREATE_NEW[];
+#endif
 
 #endif // _TRANSLATIONS_H_
 

@@ -455,12 +455,12 @@ LabelsVector ModelMap::fromCSV(const char* str)
     c = strchr(c, ',');
   }
 
-  {
-    std::string lbl(prev_c);
+  std::string lbl(prev_c);
+  if (!lbl.empty()) {
     unEscapeCSV(lbl);
     lbls.push_back(lbl);
   }
-  
+
   return lbls;
 }
 
@@ -856,11 +856,11 @@ void ModelMap::sortModelsBy(ModelsVector &mv, ModelsSortBy sortby)
     });
   } else if (sortby == NAME_ASC) {
     std::sort(mv.begin(), mv.end(), [](ModelCell *a, ModelCell *b) -> bool {
-      return strcmp(a->modelName, b->modelName) < 0;
+      return strcasecmp(a->modelName, b->modelName) < 0;
     });
   } else if (sortby == NAME_DES) {
     std::sort(mv.begin(), mv.end(), [](ModelCell *a, ModelCell *b) -> bool {
-      return strcmp(a->modelName, b->modelName) > 0;
+      return strcasecmp(a->modelName, b->modelName) > 0;
     });
   }
 }

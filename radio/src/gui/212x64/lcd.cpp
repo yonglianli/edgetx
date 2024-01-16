@@ -39,13 +39,7 @@
   #include "switches.h"
 #endif
 
-#if (defined(PCBX9E) || defined(PCBX9DP)) && defined(LCD_DUAL_BUFFER)
-  pixel_t displayBuf1[DISPLAY_BUFFER_SIZE] __DMA;
-  pixel_t displayBuf2[DISPLAY_BUFFER_SIZE] __DMA;
-  pixel_t * displayBuf = displayBuf1;
-#else
-  pixel_t displayBuf[DISPLAY_BUFFER_SIZE] __DMA;
-#endif
+pixel_t displayBuf[DISPLAY_BUFFER_SIZE] __DMA;
 
 inline bool lcdIsPointOutside(coord_t x, coord_t y)
 {
@@ -312,6 +306,7 @@ void lcdDrawSizedText(coord_t x, coord_t y, const char * s, uint8_t len, LcdFlag
       break;
     }
     else if (c >= 0x20) {
+#if !defined(BOOT)
       // UTF8 detection
       c = map_utf8_char(s, len);
       if (!c) break;
@@ -325,11 +320,14 @@ void lcdDrawSizedText(coord_t x, coord_t y, const char * s, uint8_t len, LcdFlag
           lcdDrawPoint(x, y + 5 -1 , flags);
         }
         x += 2;
-      }
-      else {
+      } else {
         lcdDrawChar(x, y, c, flags);
         x = lcdNextPos;
       }
+#else
+      lcdDrawChar(x, y, c, flags);
+      x = lcdNextPos;
+#endif
     }
     else if (c == 0x1F) {  //X-coord prefix
       setx = true;

@@ -175,7 +175,7 @@ ui(new Ui::GeneralSetup)
     ui->usbModeCB->hide();
   }
 
-  if (IS_FLYSKY_EL18(board) || IS_FLYSKY_NV14(board)) {
+  if (IS_FLYSKY_EL18(board) || IS_FLYSKY_NV14(board) || IS_FLYSKY_PL18(board)) {
     ui->hatsModeCB->setModel(new FilteredItemModel(GeneralSettings::hatsModeItemModel()));
     ui->hatsModeCB->setField(generalSettings.hatsMode, this);
   }
@@ -530,8 +530,8 @@ void GeneralSetupPanel::on_faimode_CB_stateChanged(int)
 void GeneralSetupPanel::populateRotEncModeCB()
 {
   QComboBox * b = ui->rotEncMode_CB;
-  QString strings[] = { tr("Normal"), tr("Inverted"), tr("Vertical Inverted, Horizontal Normal"), tr("Vertical Inverted, Horizontal Alternate") };
-  int itemCount = 4;
+  QString strings[] = { tr("Normal"), tr("Inverted"), tr("Vertical Inverted, Horizontal Normal"), tr("Vertical Inverted, Horizontal Alternate"),  tr("Normal, Edit Inverted") };
+  int itemCount = 5;
 
   if (Boards::getCapability(firmware->getBoard(), Board::HasColorLcd)) {
     itemCount = 2;

@@ -92,14 +92,14 @@
 #define TR_SF_RGBLEDS                  "RGB leds"
 
 #define TR_SOUND                       "播放声音"
-#define TR_PLAY_TRACK                  "播放音频文件"
+#define TR_PLAY_TRACK                  TR("Ply Trk", "播放音频文件")
 #define TR_PLAY_VALUE                  "播放数值"
 #define TR_SF_HAPTIC                   "振动"
 #define TR_SF_BG_MUSIC                 "播放背景音乐"
 #define TR_SF_BG_MUSIC_PAUSE           "暂停背景音乐"
 #define TR_SF_LOGS                     "记录日志到SD卡"
 #define TR_ADJUST_GVAR                 "修改全局变量GV值"
-#define TR_SF_PLAY_SCRIPT              "Lua脚本"
+#define TR_SF_PLAY_SCRIPT              TR("Lua", "Lua脚本")
 #define TR_SF_BACKLIGHT                "背光"
 #define TR_SF_VARIO                    "Vario传感器"
 #define TR_SF_TEST                     "测试"
@@ -161,12 +161,22 @@
 #define TR_HATSOPT                     "微调","导航键","可切换","全局"
 #define TR_HATSMODE_TRIMS              "按键帽: 微调"
 #define TR_HATSMODE_KEYS               "按键帽: 导航键"
+#define TR_HATSMODE_KEYS_HELP          "Left side:\n"\
+                                       "   Right = MDL\n"\
+                                       "   Up = SYS\n"\
+                                       "   Down = TELE\n"\
+                                       "\n"\
+                                       "Right side:\n"\
+                                       "   Left = PAGE<\n"\
+                                       "   Right = PAGE>\n"\
+                                       "   Up = PREV/INC\n"\
+                                       "   Down = NEXT/DEC"
 #endif
 
 #if defined(COLORLCD)
   #define TR_ROTARY_ENC_OPT         "正常","反向"
 #else
-  #define TR_ROTARY_ENC_OPT         "正常","反向","V-I H-N","V-I H-A"
+  #define TR_ROTARY_ENC_OPT         "正常","反向","V-I H-N","V-I H-A","V-N E-I"
 #endif
 
 #if defined(IMU)
@@ -216,7 +226,7 @@
 
 #if defined(PCBFRSKY)
   #define TR_ENTER                     "[ENTER]"
-#elif defined(PCBNV14)
+#elif defined(PCBNV14) || defined(PCBPL18)
   #define TR_ENTER                     "[NEXT]"
 #else
   #define TR_ENTER                     "[MENU]"
@@ -1032,6 +1042,16 @@
   #define TR_BL_SELECT_KEY            "[R TRIM] to select file"
   #define TR_BL_FLASH_KEY             "Hold [R TRIM] long to flash"
   #define TR_BL_EXIT_KEY              " [L TRIM] to exit"
+#elif defined(PCBPL18)
+   // Bootloader PL18 specific - Ascii only
+  #define TR_BL_RF_USB_ACCESS         "RF USB access"
+  #define TR_BL_ERASE_INT_FLASH       "Erase Internal Flash Storage"
+  #define TR_BL_ERASE_FLASH           "Erase Flash Storage"
+  #define TR_BL_ERASE_FLASH_MSG       "This may take up to 200s"
+  #define TR_BL_SELECT_KEY            " [TR4 Dn] to select file"
+  #define TR_BL_FLASH_KEY             " Hold [TR4 Dn] long to flash"
+  #define TR_BL_ERASE_KEY             " Hold [TR4 Dn] long to erase"
+  #define TR_BL_EXIT_KEY              " [TR4 Up] to exit"
 #endif
 
 // About screen
@@ -1103,8 +1123,8 @@
 #define TR_MENU_LUA                    STR_CHAR_LUA "LUA脚本"
 #define TR_MENU_STICKS                 STR_CHAR_STICK "摇杆"
 #define TR_MENU_POTS                   STR_CHAR_POT "旋钮"
-#define TR_MENU_MIN                    STR_CHAR_FUNCTION "固定值MIN"
-#define TR_MENU_MAX                    STR_CHAR_FUNCTION "固定值MAX"
+#define TR_MENU_MIN                    STR_CHAR_FUNCTION "最小"
+#define TR_MENU_MAX                    STR_CHAR_FUNCTION "最大"
 #define TR_MENU_HELI                   STR_CHAR_CYC "斜盘混控CYC"
 #define TR_MENU_TRIMS                  STR_CHAR_TRIM "微调"
 #define TR_MENU_SWITCHES               STR_CHAR_SWITCH "开关"
@@ -1240,3 +1260,7 @@
 #define TR_SELECT_MENU_ALL        "All"
 #define TR_SELECT_MENU_CLR        "Clear"
 #define TR_SELECT_MENU_INV        "Invert"
+
+#define TR_SORT_ORDERS            "名称 A-Z","名称 Z-A","不常用","常用"
+#define TR_SORT_MODELS_BY         "排序"
+#define TR_CREATE_NEW             "新建"

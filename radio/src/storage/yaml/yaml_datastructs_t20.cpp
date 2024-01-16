@@ -4,13 +4,6 @@
 // Enums first
 //
 
-const struct YamlIdStr enum_HatsMode[] = {
-  {  HATSMODE_TRIMS_ONLY, "TRIMS_ONLY"  },
-  {  HATSMODE_KEYS_ONLY, "KEYS_ONLY"  },
-  {  HATSMODE_SWITCHABLE, "SWITCHABLE"  },
-  {  HATSMODE_GLOBAL, "GLOBAL"  },
-  {  0, NULL  }
-};
 const struct YamlIdStr enum_BacklightMode[] = {
   {  e_backlight_mode_off, "backlight_mode_off"  },
   {  e_backlight_mode_keys, "backlight_mode_keys"  },
@@ -91,6 +84,7 @@ const struct YamlIdStr enum_Functions[] = {
   {  FUNC_RACING_MODE, "RACING_MODE"  },
   {  FUNC_DISABLE_AUDIO_AMP, "DISABLE_AUDIO_AMP"  },
   {  FUNC_RGB_LED, "RGB_LED"  },
+  {  FUNC_TEST, "TEST"  },
   {  0, NULL  }
 };
 const struct YamlIdStr enum_TimerModes[] = {
@@ -156,6 +150,10 @@ const struct YamlIdStr enum_SwashType[] = {
 };
 const struct YamlIdStr enum_SwitchSources[] = {
   {  SWSRC_NONE, "NONE"  },
+  {  SWSRC_TrimT7Down, "TrimT7Down"  },
+  {  SWSRC_TrimT7Up, "TrimT7Up"  },
+  {  SWSRC_TrimT8Down, "TrimT8Down"  },
+  {  SWSRC_TrimT8Up, "TrimT8Up"  },
   {  SWSRC_ON, "ON"  },
   {  SWSRC_ONE, "ONE"  },
   {  SWSRC_TELEMETRY_STREAMING, "TELEMETRY_STREAMING"  },
@@ -271,14 +269,15 @@ static const struct YamlNode struct_CustomFunctionData[] = {
   YAML_ENUM("func", 6, enum_Functions),
   YAML_CUSTOM("def",r_customFn,w_customFn),
   YAML_PADDING( 64 ),
-  YAML_PADDING( 8 ),
+  YAML_PADDING( 1 ),
+  YAML_PADDING( 7 ),
   YAML_END
 };
 static const struct YamlNode struct_RadioData[] = {
   YAML_UNSIGNED( "manuallyEdited", 1 ),
   YAML_SIGNED( "timezoneMinutes", 3 ),
-  YAML_ENUM("hatsMode", 2, enum_HatsMode),
   YAML_UNSIGNED( "ppmunit", 2 ),
+  YAML_PADDING( 2 ),
   YAML_CUSTOM("semver",nullptr,w_semver),
   YAML_CUSTOM("board",nullptr,w_board),
   YAML_ARRAY("calib", 48, 12, struct_CalibData, NULL),
@@ -317,7 +316,7 @@ static const struct YamlNode struct_RadioData[] = {
   YAML_SIGNED_CUST( "beepLength", 3, r_5pos, w_5pos ),
   YAML_SIGNED_CUST( "hapticStrength", 3, r_5pos, w_5pos ),
   YAML_UNSIGNED( "gpsFormat", 1 ),
-  YAML_PADDING( 1 ),
+  YAML_UNSIGNED( "audioMuteEnable", 1 ),
   YAML_UNSIGNED_CUST( "speakerPitch", 8, r_spPitch, w_spPitch ),
   YAML_SIGNED_CUST( "speakerVolume", 8, r_vol, w_vol ),
   YAML_SIGNED_CUST( "vBatMin", 8, r_vbat_min, w_vbat_min ),
@@ -356,10 +355,9 @@ static const struct YamlNode struct_RadioData[] = {
   YAML_UNSIGNED( "backlightColor", 8 ),
   YAML_STRING("ownerRegistrationID", 8),
   YAML_CUSTOM("rotEncDirection",r_rotEncDirection,nullptr),
-  YAML_UNSIGNED( "rotEncMode", 2 ),
+  YAML_UNSIGNED( "rotEncMode", 3 ),
   YAML_SIGNED( "uartSampleMode", 2 ),
   YAML_PADDING( 3 ),
-  YAML_UNSIGNED( "audioMuteEnable", 1 ),
   YAML_UNSIGNED( "radioGFDisabled", 1 ),
   YAML_UNSIGNED( "radioTrainerDisabled", 1 ),
   YAML_UNSIGNED( "modelHeliDisabled", 1 ),
@@ -801,8 +799,7 @@ static const struct YamlNode struct_ModelData[] = {
   YAML_UNSIGNED( "disableTelemetryWarning", 1 ),
   YAML_UNSIGNED( "showInstanceIds", 1 ),
   YAML_UNSIGNED( "checklistInteractive", 1 ),
-  YAML_ENUM("hatsMode", 2, enum_HatsMode),
-  YAML_PADDING( 2 ),
+  YAML_PADDING( 4 ),
   YAML_SIGNED( "customThrottleWarningPosition", 8 ),
   YAML_UNSIGNED( "beepANACenter", 16 ),
   YAML_ARRAY("mixData", 160, 64, struct_MixData, NULL),
