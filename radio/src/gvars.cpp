@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 uint8_t gvarDisplayTimer = 0;
 uint8_t gvarLastChanged = 0;
@@ -61,14 +61,19 @@ void setGVarValue(uint8_t gv, int16_t value, int8_t fm)
 {
   fm = getGVarFlightMode(fm, gv);
   if (GVAR_VALUE(gv, fm) != value) {
-    SET_GVAR_VALUE(gv, fm, value);
+    GVAR_VALUE(gv, fm) = value;
+    storageDirty(EE_MODEL);
+    if (g_model.gvars[gv].popup) {
+      gvarLastChanged = gv;
+      gvarDisplayTimer = GVAR_DISPLAY_TIME;
+    }
   }
 }
 
 int16_t getGVarFieldValue(int16_t val, int16_t min, int16_t max, int8_t fm)
 {
-  if (GV_IS_GV_VALUE(val, min, max)) {
-    int8_t gv = GV_INDEX_CALCULATION(val, max);
+  if (GV_IS_GV_VALUE(val)) {
+    int8_t gv = GV_INDEX_FROM_VALUE(val);
     val = getGVarValue(gv, fm);
   }
   return limit(min, val, max);
@@ -76,8 +81,8 @@ int16_t getGVarFieldValue(int16_t val, int16_t min, int16_t max, int8_t fm)
 
 int32_t getGVarFieldValuePrec1(int16_t val, int16_t min, int16_t max, int8_t fm)
 {
-  if (GV_IS_GV_VALUE(val, min, max)) {
-    int8_t gv = GV_INDEX_CALCULATION(val, max);
+  if (GV_IS_GV_VALUE(val)) {
+    int8_t gv = GV_INDEX_FROM_VALUE(val);
     val = getGVarValuePrec1(gv, fm);
   }
   else {

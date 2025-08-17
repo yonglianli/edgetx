@@ -19,11 +19,20 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "inactivity_timer.h"
+#include "os/sleep.h"
+
+static bool splashStarted = false;
 
 void startSplash()
 {
+  splashStarted = true;
+}
+
+void cancelSplash()
+{
+  splashStarted = false;
 }
 
 void waitSplash()
@@ -34,7 +43,7 @@ void waitSplash()
   bool refresh = false;
 #endif
 
-  if (SPLASH_NEEDED()) {
+  if (SPLASH_NEEDED() && splashStarted) {
     resetBacklightTimeout();
     drawSplash();
 
@@ -45,7 +54,7 @@ void waitSplash()
     tmr10ms_t tgtime = get_tmr10ms() + SPLASH_TIMEOUT;
 
     while (tgtime > get_tmr10ms()) {
-      RTOS_WAIT_TICKS(1);
+      sleep_ms(1);
 
       getADC();
 

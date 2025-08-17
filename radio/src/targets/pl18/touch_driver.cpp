@@ -19,6 +19,9 @@
  * GNU General Public License for more details.
  */
 
+#include "hal/gpio.h"
+#include "hal/i2c_driver.h"
+#include "stm32_gpio.h"
 #include "stm32_hal_ll.h"
 #include "stm32_hal.h"
 #include "stm32_i2c_driver.h"
@@ -29,10 +32,11 @@
 #include "timers_driver.h"
 #include "delays_driver.h"
 #include "touch_driver.h"
+#include "keys.h"
 
 #include "debug.h"
 
-#define TAP_TIME 25
+#define TAP_TIME 250 // 250 ms
 #define I2C_TIMEOUT_MAX 5 // 5 ms
 
 // FT6236 definitions
@@ -63,20 +67,57 @@
 #define TOUCH_CHSC5448_EVT_CONTACT        0x08
 #define TOUCH_CHSC5448_MAX_POINTS         5
 
-typedef enum {TC_NONE, TC_FT6236, TC_CST340, TC_CHSC5448} TouchController;
+// CST836U definitions
+#define TOUCH_CST836U_I2C_ADDRESS         0x15
+#define TOUCH_CST836U_REG_NUM             0x02
+#define TOUCH_CST836U_REG_P1_XH           0x03
+#define TOUCH_CST836U_EVT_SHIFT           6
+#define TOUCH_CST836U_EVT_MASK            (3 << TOUCH_FT6206_EVT_SHIFT)
+#define TOUCH_CST836U_EVT_CONTACT         0x02
+#define TOUCH_CST836U_FW_VERSION_L_REG    0xa6
+#define TOUCH_CST836U_FW_VERSION_H_REG    0xa7
+#define TOUCH_CST836U_MODULE_VERSION_REG  0xa8
+#define TOUCH_CST836U_PROJECT_NAME_REG    0xa9
+#define TOUCH_CST836U_CHIP_TYPE_L_REG     0xaa
+#define TOUCH_CST836U_CHIP_TYPE_H_REG     0xab
+
+
+typedef enum {TC_NONE, TC_FT6236, TC_CST836U, TC_CST340, TC_CHSC5448} TouchController;
 
 #if defined(DEBUG)
-const char TOUCH_CONTROLLER_STR[][10] = {"", "FT6236", "CST340", "CHSC5448"};
+const char TOUCH_CONTROLLER_STR[][10] = {"", "FT6236", "CST836U", "CST340", "CHSC5448"};
 #endif
 
+static uint8_t lastTouchKey = 0;
+static bool eventFired = false;
+
+static const event_t TOUCHKEY_EVENTS[8] = {
+  KEY_EXIT | _MSK_KEY_BREAK,
+  KEY_MODEL | _MSK_KEY_BREAK,
+  KEY_MODEL | _MSK_KEY_LONG,
+  KEY_PAGEUP | _MSK_KEY_FIRST,
+  KEY_TELE | _MSK_KEY_BREAK,
+  KEY_PAGEDN | _MSK_KEY_FIRST,
+  KEY_SYS | _MSK_KEY_LONG,
+  KEY_ENTER | _MSK_KEY_BREAK,
+};
+
 TouchController touchController = TC_NONE;
+
+enum TouchRotate
+{
+  DEG_0,
+  DEG_90,
+  DEG_180,
+  DEG_270
+};
 
 struct TouchControllerDescriptor
 {
   bool (*hasTouchEvent)();
   bool (*touchRead)(uint16_t * X, uint16_t * Y);
   void (*printDebugInfo)();
-  bool needTranspose;
+  TouchRotate rotate;
 };
 
 union rpt_point_t
@@ -96,6 +137,7 @@ union rpt_point_t
 
 extern uint8_t TouchControllerType;
 
+const char* boardTouchType = "";
 static const TouchControllerDescriptor *tcd = nullptr;
 static TouchState internalTouchState = {};
 volatile static bool touchEventOccured;
@@ -108,49 +150,11 @@ static void _touch_exti_isr(void)
   touchEventOccured = true;
 }
 
-static void _touch_exti_stop(void)
-{
-  stm32_exti_disable(TOUCH_INT_EXTI_Line);
-}
-
-static void _touch_exti_config(void)
-{
-  __HAL_RCC_SYSCFG_CLK_ENABLE();
-  LL_SYSCFG_SetEXTISource(TOUCH_INT_EXTI_Port, TOUCH_INT_EXTI_SysCfgLine);
-
-  stm32_exti_enable(TOUCH_INT_EXTI_Line, LL_EXTI_TRIGGER_FALLING, _touch_exti_isr);
-}
-
-static void _touch_gpio_config(void)
-{
-  LL_GPIO_InitTypeDef gpioInit;
-  LL_GPIO_StructInit(&gpioInit);
-
-  stm32_gpio_enable_clock(TOUCH_RST_GPIO);
-  stm32_gpio_enable_clock(TOUCH_INT_GPIO);
-  
-  gpioInit.Mode = LL_GPIO_MODE_OUTPUT;
-  gpioInit.Speed = LL_GPIO_SPEED_FREQ_LOW;
-  gpioInit.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  gpioInit.Pull = LL_GPIO_PULL_NO;
-
-  gpioInit.Pin = TOUCH_RST_GPIO_PIN;
-  LL_GPIO_Init(TOUCH_RST_GPIO, &gpioInit);
-  LL_GPIO_SetOutputPin(TOUCH_RST_GPIO, TOUCH_RST_GPIO_PIN);
-
-  gpioInit.Pin = TOUCH_INT_GPIO_PIN;
-  gpioInit.Mode = LL_GPIO_MODE_INPUT;
-  gpioInit.Pull = LL_GPIO_PULL_UP;
-  gpioInit.OutputType = LL_GPIO_OUTPUT_OPENDRAIN;
-  LL_GPIO_Init(TOUCH_INT_GPIO, &gpioInit);
-  LL_GPIO_SetOutputPin(TOUCH_INT_GPIO, TOUCH_INT_GPIO_PIN);
-}
-
 static void _touch_reset()
 {
-  LL_GPIO_ResetOutputPin(TOUCH_RST_GPIO, TOUCH_RST_GPIO_PIN);
+  gpio_clear(TOUCH_RST_GPIO);
   delay_ms(10);
-  LL_GPIO_SetOutputPin(TOUCH_RST_GPIO, TOUCH_RST_GPIO_PIN);
+  gpio_set(TOUCH_RST_GPIO);
   delay_ms(300);
 }
 
@@ -158,21 +162,21 @@ static void _i2c_init(void)
 {
   TRACE("Touch I2C Init");
 
-  if (stm32_i2c_init(TOUCH_I2C_BUS, TOUCH_I2C_CLK_RATE) < 0) {
-    TRACE("Touch I2C Init ERROR: stm32_i2c_init failed");
+  if (i2c_init(TOUCH_I2C_BUS) < 0) {
+    TRACE("Touch I2C Init ERROR: i2c_init failed");
     return;
   }
 }
 
 static void _i2c_reInit(void)
 {
-  stm32_i2c_deinit(TOUCH_I2C_BUS);
-  _i2c_init();
+//  stm32_i2c_deinit(TOUCH_I2C_BUS);
+//  _i2c_init();
 }
 
 static int _i2c_read(uint8_t addr, uint32_t reg, uint8_t regSize, uint8_t* data, uint16_t len, uint32_t timeout)
 {
-  if (regSize > 2) {
+  if (touchController == TC_CST836U || regSize > 2) {
     if(stm32_i2c_master_tx(TOUCH_I2C_BUS, addr, (uint8_t*) &reg, regSize, 3) < 0)
       return false;
     delay_us(5);
@@ -205,6 +209,11 @@ static uint16_t _i2c_readMultipleRetry(uint8_t addr, uint32_t reg, uint8_t regSi
   return length;
 }
 
+static bool defaultHasTouchEvent()
+{
+  return touchEventOccured;
+}
+
 static bool ft6236TouchRead(uint16_t * X, uint16_t * Y)
 {
   // Read register FT6206_TD_STAT_REG to check number of touches detection
@@ -228,11 +237,6 @@ static bool ft6236TouchRead(uint16_t * X, uint16_t * Y)
   return false;
 }
 
-static bool ft6236HasTouchEvent()
-{
-  return touchEventOccured;
-}
-
 static void ft6236PrintDebugInfo()
 {
 #if defined(DEBUG)
@@ -246,6 +250,38 @@ static void ft6236PrintDebugInfo()
   TRACE("ft6x36: rel code 0x%02X", _i2c_readRetry(TOUCH_FT6236_I2C_ADDRESS, TOUCH_FT6236_REG_RELEASE_CODE_ID, 1));
 #endif
 
+}
+
+static bool cst836uTouchRead(uint16_t * X, uint16_t * Y)
+{
+  // Read register TOUCH_CST836U_REG_NUM to check number of touches detection
+  uint8_t nbTouch = _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_REG_NUM, 1);
+  bool hasTouch = nbTouch > 0;
+
+  if (hasTouch) {
+    uint8_t dataxy[4];
+    // Read X and Y positions and event
+    _i2c_readMultipleRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_REG_P1_XH, 1, dataxy, sizeof(dataxy));
+    
+    // Send back ready X position to caller
+    *X = ((dataxy[0] & 0x0f) << 8) | dataxy[1];
+    // Send back ready Y position to caller
+    *Y = ((dataxy[2] & 0x0f) << 8) | dataxy[3];
+
+    uint8_t event = (dataxy[0] & TOUCH_CST836U_EVT_MASK) >> TOUCH_CST836U_EVT_SHIFT;
+    return event == TOUCH_CST836U_EVT_CONTACT;
+  }
+  return false;
+}
+
+static void cst836uPrintDebugInfo(void)
+{
+#if defined(DEBUG)
+  TRACE("cst836u: fw ver 0x%02X %02X", _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_FW_VERSION_H_REG, 1), _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_FW_VERSION_L_REG, 1));
+  TRACE("cst836u: module version 0x%02X", _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_MODULE_VERSION_REG, 1));
+  TRACE("cst836u: project name 0x%02X", _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_PROJECT_NAME_REG, 1));
+  TRACE("cst836u: chip type 0x%02X 0x%02X", _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_CHIP_TYPE_H_REG, 1), _i2c_readRetry(TOUCH_CST836U_I2C_ADDRESS, TOUCH_CST836U_CHIP_TYPE_L_REG, 1));
+#endif
 }
 
 static bool cst340TouchRead(uint16_t * X, uint16_t * Y)
@@ -299,13 +335,34 @@ static bool chsc5448TouchRead(uint16_t * X, uint16_t * Y)
   *X = ((ppt->rp.x_h4 & 0x0f) << 8) | ppt->rp.x_l8;
   *Y = ((ppt->rp.y_h4 & 0x0f) << 8) | ppt->rp.y_l8;
   uint8_t event = ppt->rp.event;
+  bool hasEvent = ptCnt > 0 && event == TOUCH_CHSC5448_EVT_CONTACT;
 
-  return ptCnt > 0 && event == TOUCH_CHSC5448_EVT_CONTACT;
-}
+  // Touch keys returns X = 2600, Y = 1 to 8 (total 8 keys)
+  uint8_t currTouchKey = 0;  
+  if (hasEvent && *X >= 2000) {    
+    // Touch key event
+    currTouchKey = *Y;
+    if (currTouchKey > 8) {
+      currTouchKey = 8;
+    }
+    hasEvent = false;
+  }
 
-static bool chsc5448HasTouchEvent()
-{
-  return touchEventOccured;
+#if defined(DEBUG)
+    TRACE("%s: lastTouchKey=%d, currTouchKey=%d", TOUCH_CONTROLLER_STR[touchController], lastTouchKey, currTouchKey);
+#endif
+
+  if (currTouchKey != lastTouchKey) {
+    lastTouchKey = currTouchKey;
+    eventFired = false;
+  } else {
+    if (currTouchKey > 0 && !eventFired) {
+      pushEvent(TOUCHKEY_EVENTS[currTouchKey - 1]);
+      eventFired = true;
+    }
+  }
+
+  return hasEvent;
 }
 
 static void chsc5448PrintDebugInfo()
@@ -315,10 +372,26 @@ static void chsc5448PrintDebugInfo()
 
 static const TouchControllerDescriptor FT6236 =
 {
-  .hasTouchEvent = ft6236HasTouchEvent,
+  .hasTouchEvent = defaultHasTouchEvent,
   .touchRead = ft6236TouchRead,
   .printDebugInfo = ft6236PrintDebugInfo,
-  .needTranspose = true,
+#if defined(RADIO_NB4P) || defined(RADIO_NV14_FAMILY)
+  .rotate = DEG_180,
+#else
+  .rotate = DEG_270,
+#endif
+};
+
+static const TouchControllerDescriptor CST836U =
+{
+  .hasTouchEvent = defaultHasTouchEvent,
+  .touchRead = cst836uTouchRead,
+  .printDebugInfo = cst836uPrintDebugInfo,
+#if defined(RADIO_NB4P) || defined(RADIO_NV14_FAMILY)
+  .rotate = DEG_180,
+#else
+  .rotate = DEG_270,
+#endif
 };
 
 static const TouchControllerDescriptor CST340 =
@@ -326,15 +399,19 @@ static const TouchControllerDescriptor CST340 =
   .hasTouchEvent = cst340HasTouchEvent,
   .touchRead = cst340TouchRead,
   .printDebugInfo = cst340PrintDebugInfo,
-  .needTranspose = true,
+#if defined(RADIO_NB4P) || defined(RADIO_NV14_FAMILY)
+  .rotate = DEG_180,
+#else
+  .rotate = DEG_270,
+#endif
 };
 
 static const TouchControllerDescriptor CHSC5448 =
 {
-  .hasTouchEvent = chsc5448HasTouchEvent,
+  .hasTouchEvent = defaultHasTouchEvent,
   .touchRead = chsc5448TouchRead,
   .printDebugInfo = chsc5448PrintDebugInfo,
-  .needTranspose = false,
+  .rotate = DEG_0,
 };
 
 void _detect_touch_controller()
@@ -342,30 +419,41 @@ void _detect_touch_controller()
   if (stm32_i2c_is_dev_ready(TOUCH_I2C_BUS, TOUCH_CST340_I2C_ADDRESS, 3, I2C_TIMEOUT_MAX) == 0) {
     touchController = TC_CST340;
     tcd = &CST340;
+    boardTouchType = "CST340";
     TouchControllerType = 0;
   } else if (stm32_i2c_is_dev_ready(TOUCH_I2C_BUS, TOUCH_CHSC5448_I2C_ADDRESS, 3, I2C_TIMEOUT_MAX) == 0) {
     touchController = TC_CHSC5448;
     tcd = &CHSC5448;
     TouchControllerType = 0;
+    boardTouchType = "CHSC5448";
+  } else if (stm32_i2c_is_dev_ready(TOUCH_I2C_BUS, TOUCH_CST836U_I2C_ADDRESS, 3, 5) == 0) {
+    touchController = TC_CST836U;
+    tcd = &CST836U;
+    boardTouchType = "CST836U";
   } else {
     touchController = TC_FT6236;
     tcd = &FT6236;
+    boardTouchType = "FT6236";
+#if defined(RADIO_NB4P) || defined(RADIO_NV14_FAMILY)
+    TouchControllerType = 0;
+#else
     TouchControllerType = 1;
+#endif
   }
 }
 
 void touchPanelDeInit()
 {
-  _touch_exti_stop();
+  gpio_int_disable(TOUCH_INT_GPIO);
 }
 
 bool touchPanelInit()
 {
-  _touch_gpio_config();
+  gpio_init(TOUCH_RST_GPIO, GPIO_OUT, GPIO_PIN_SPEED_LOW);
   _i2c_init();
   _touch_reset();
   _detect_touch_controller();
-  _touch_exti_config();
+  gpio_init_int(TOUCH_INT_GPIO, GPIO_IN_PU, GPIO_FALLING, _touch_exti_isr);
 
   tcd->printDebugInfo();
 
@@ -383,17 +471,25 @@ struct TouchState touchPanelRead()
 
   touchEventOccured = false;
 
-  tmr10ms_t now = get_tmr10ms();
+  uint32_t now = timersGetMsTick();
   internalTouchState.tapCount = 0;
   unsigned short touchX;
   unsigned short touchY;
   bool hasTouchContact = tcd->touchRead(&touchX, &touchY);
 
-  if (tcd->needTranspose) {
-    // Touch sensor is rotated by 90 deg
-    unsigned short tmp = touchY;
-    touchY = 319 - touchX;
-    touchX = tmp;
+  unsigned short tmp;
+  switch(tcd->rotate) {
+    case DEG_270:
+      tmp = touchY;
+      touchY = 319 - touchX;
+      touchX = tmp;
+      break;
+    case DEG_180:
+      touchY = 479 - touchY;
+      touchX = 319 - touchX;
+      break;
+    default:
+      break;
   }
 
   if (hasTouchContact) {

@@ -19,17 +19,15 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "multi.h"
+#include "os/async.h"
+#include "os/timer.h"
 #include "pulses/afhds3.h"
 #include "pulses/flysky.h"
 #include "mixer_scheduler.h"
 #include "io/multi_protolist.h"
 #include "hal/module_port.h"
-
-#if defined(LIBOPENUI)
-  #include "libopenui.h"
-#endif
 
 #if !defined(SIMU)
   #include <FreeRTOS/include/FreeRTOS.h>
@@ -60,37 +58,32 @@
   #include "flysky_ibus.h"
 #endif
 
-uint8_t telemetryStreaming = 0;
-uint8_t telemetryRxBuffer[TELEMETRY_RX_PACKET_SIZE];
-uint8_t telemetryRxBufferCount = 0;
+struct telemetry_buffer {
+  uint8_t buffer[TELEMETRY_RX_PACKET_SIZE];
+  uint8_t length;
+};
 
+uint8_t telemetryStreaming = 0;
 uint8_t telemetryState = TELEMETRY_INIT;
 
 TelemetryData telemetryData;
-
-#if defined(INTERNAL_MODULE_SERIAL_TELEMETRY)
-static uint8_t intTelemetryRxBuffer[TELEMETRY_RX_PACKET_SIZE];
-static uint8_t intTelemetryRxBufferCount;
-#endif
-
 static rxStatStruct rxStat;
 
-uint8_t * getTelemetryRxBuffer(uint8_t moduleIdx)
+telemetry_buffer _telemetry_rx_buffer[NUM_MODULES];
+
+static void clearTelemetryRxBuffers()
 {
-#if defined(INTERNAL_MODULE_SERIAL_TELEMETRY)
-  if (moduleIdx == INTERNAL_MODULE)
-    return intTelemetryRxBuffer;
-#endif
-  return telemetryRxBuffer;
+  memset(_telemetry_rx_buffer, 0, sizeof(_telemetry_rx_buffer));
+}
+
+uint8_t* getTelemetryRxBuffer(uint8_t moduleIdx)
+{
+  return _telemetry_rx_buffer[moduleIdx].buffer;
 }
 
 uint8_t &getTelemetryRxBufferCount(uint8_t moduleIdx)
 {
-#if defined(INTERNAL_MODULE_SERIAL_TELEMETRY)
-  if (moduleIdx == INTERNAL_MODULE)
-    return intTelemetryRxBufferCount;
-#endif
-  return telemetryRxBufferCount;
+  return _telemetry_rx_buffer[moduleIdx].length;
 }
 
 rxStatStruct *getRxStatLabels() {
@@ -178,14 +171,10 @@ void telemetryMirrorSend(uint8_t data)
   }
 }
 
-#if !defined(SIMU)
-static TimerHandle_t telemetryTimer = nullptr;
-static StaticTimer_t telemetryTimerBuffer;
+static timer_handle_t telemetryTimer = TIMER_INITIALIZER;
 
-static void telemetryTimerCb(TimerHandle_t xTimer)
+static void telemetryTimerCb(timer_handle_t* h)
 {
-  (void)xTimer;
-
   DEBUG_TIMER_START(debugTimerTelemetryWakeup);
   telemetryWakeup();
   DEBUG_TIMER_STOP(debugTimerTelemetryWakeup);
@@ -193,27 +182,22 @@ static void telemetryTimerCb(TimerHandle_t xTimer)
 
 void telemetryStart()
 {
-  if (!telemetryTimer) {
-    telemetryTimer =
-        xTimerCreateStatic("Telem", 2 / RTOS_MS_PER_TICK, pdTRUE, (void*)0,
-                           telemetryTimerCb, &telemetryTimerBuffer);
+  if (!timer_is_created(&telemetryTimer)) {
+    timer_create(&telemetryTimer, telemetryTimerCb, "Telem", 2, true);
   }
 
-  if (telemetryTimer) {
-    if( xTimerStart( telemetryTimer, 0 ) != pdPASS ) {
-      /* The timer could not be set into the Active state. */
-    }
-  }
+  clearTelemetryRxBuffers();
+  timer_start(&telemetryTimer);
 }
 
 void telemetryStop()
 {
-  if (telemetryTimer) {
-    if( xTimerStop( telemetryTimer, 5 / RTOS_MS_PER_TICK ) != pdPASS ) {
-      /* The timer could not be stopped. */
-    }
+  if (!timer_is_created(&telemetryTimer)) {
+    timer_stop(&telemetryTimer);
   }
 }
+
+static volatile bool _poll_frame_queued[NUM_MODULES] = {false};
 
 static void _poll_frame(void *pvParameter1, uint32_t ulParameter2)
 {
@@ -221,6 +205,7 @@ static void _poll_frame(void *pvParameter1, uint32_t ulParameter2)
 
   auto drv = (const etx_proto_driver_t*)pvParameter1;
   auto module = (uint8_t)ulParameter2;
+  _poll_frame_queued[module] = false;
 
   auto mod = pulsesGetModuleDriver(module);
   if (!mod || !mod->drv || !mod->ctx || (drv != mod->drv))
@@ -255,11 +240,8 @@ static void _poll_frame(void *pvParameter1, uint32_t ulParameter2)
 
 void telemetryFrameTrigger_ISR(uint8_t module, const etx_proto_driver_t* drv)
 {
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  xTimerPendFunctionCallFromISR(_poll_frame, (void*)drv, module, &xHigherPriorityTaskWoken);
-  portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+  async_call_isr(_poll_frame, &_poll_frame_queued[module], (void*)drv, module);
 }
-#endif
 
 inline bool isBadAntennaDetected()
 {
@@ -350,7 +332,7 @@ void telemetryWakeup()
       audioEvent(AU_SENSOR_LOST);
     }
 
-#if defined(PCBFRSKY)
+#if defined(PXX1) || defined(PXX2)
     if (isBadAntennaDetected()) {
       AUDIO_RAS_RED();
       POPUP_WARNING_ON_UI_TASK(STR_WARNING, STR_ANTENNAPROBLEM);
@@ -462,10 +444,41 @@ void logTelemetryWriteByte(uint8_t data)
 }
 #endif
 
-OutputTelemetryBuffer outputTelemetryBuffer __DMA;
+OutputTelemetryBuffer outputTelemetryBuffer __DMA_NO_CACHE;
 
 #if defined(LUA)
-Fifo<uint8_t, LUA_TELEMETRY_INPUT_FIFO_SIZE> * luaInputTelemetryFifo = NULL;
+TelemetryQueue* luaInputTelemetryFifo = nullptr;
+#if defined(COLORLCD)
+std::list<TelemetryQueue*> telemetryQueues;
+
+void registerTelemetryQueue(TelemetryQueue* queue)
+{
+  telemetryQueues.emplace_back(queue);
+}
+
+void deregisterTelemetryQueue(TelemetryQueue* queue)
+{
+  telemetryQueues.remove(queue);
+}
+#endif
+
+static void pushDataToQueue(TelemetryQueue* queue, uint8_t* data, int length)
+{
+  if (queue && queue->hasSpace(length)) {
+    for (uint8_t i = 0; i < length; i += 1) {
+      queue->push(data[i]);
+    }
+  }
+}
+
+void pushTelemetryDataToQueues(uint8_t* data, int length)
+{
+#if defined(COLORLCD)
+  for (auto it = telemetryQueues.cbegin(); it != telemetryQueues.cend(); ++it)
+    pushDataToQueue(*it, data, length);
+#endif
+  pushDataToQueue(luaInputTelemetryFifo, data, length);
+}
 #endif
 
 #if defined(HARDWARE_INTERNAL_MODULE)

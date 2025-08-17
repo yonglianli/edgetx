@@ -19,19 +19,25 @@
  * GNU General Public License for more details.
  */
 
+#include "hal/gpio.h"
+#include "stm32_gpio.h"
+#include "stm32_spi.h"
+#include "stm32_dma.h"
+
 #include "board.h"
 #include "debug.h"
 #include "lcd.h"
 
 #include "hal/abnormal_reboot.h"
+#include "timers_driver.h"
 
 #if !defined(BOOT)
-  #include "opentx.h"
+  #include "edgetx.h"
 #endif
 
 #if defined(OLED_SCREEN)
   #define LCD_CONTRAST_OFFSET            0
-#elif defined(RADIO_FAMILY_JUMPER_T12) || defined(RADIO_TX12) || defined(RADIO_TX12MK2) || defined(RADIO_BOXER) || defined(RADIO_ZORRO) || defined(RADIO_POCKET) || defined(RADIO_T8) || defined(RADIO_COMMANDO8) || defined(RADIO_TPRO) || defined(RADIO_MT12)
+#elif defined(RADIO_FAMILY_JUMPER_T12) || defined(MANUFACTURER_RADIOMASTER) || defined(RADIO_COMMANDO8) || defined(RADIO_TPRO) || defined(RADIO_T12MAX) || defined(RADIO_V12) || defined(RADIO_V14)
   #define LCD_CONTRAST_OFFSET            -10
 #else
   #define LCD_CONTRAST_OFFSET            160
@@ -39,14 +45,14 @@
 #define RESET_WAIT_DELAY_MS            300 // Wait time after LCD reset before first command
 #define WAIT_FOR_DMA_END()             do { } while (lcd_busy)
 
-#define LCD_NCS_HIGH()                 LCD_NCS_GPIO->BSRRL = LCD_NCS_GPIO_PIN
-#define LCD_NCS_LOW()                  LCD_NCS_GPIO->BSRRH = LCD_NCS_GPIO_PIN
+#define LCD_NCS_HIGH()  gpio_set(LCD_NCS_GPIO)
+#define LCD_NCS_LOW()   gpio_clear(LCD_NCS_GPIO)
 
-#define LCD_A0_HIGH()                  LCD_SPI_GPIO->BSRRL = LCD_A0_GPIO_PIN
-#define LCD_A0_LOW()                   LCD_SPI_GPIO->BSRRH = LCD_A0_GPIO_PIN
+#define LCD_A0_HIGH()   gpio_set(LCD_A0_GPIO)
+#define LCD_A0_LOW()    gpio_clear(LCD_A0_GPIO)
 
-#define LCD_RST_HIGH()                 LCD_RST_GPIO->BSRRL = LCD_RST_GPIO_PIN
-#define LCD_RST_LOW()                  LCD_RST_GPIO->BSRRH = LCD_RST_GPIO_PIN
+#define LCD_RST_HIGH()  gpio_set(LCD_RST_GPIO)
+#define LCD_RST_LOW()   gpio_clear(LCD_RST_GPIO)
 
 bool lcdInitFinished = false;
 void lcdInitFinish();
@@ -68,7 +74,9 @@ void lcdWriteCommand(uint8_t byte)
 
 void lcdHardwareInit()
 {
-  GPIO_InitTypeDef GPIO_InitStructure;
+  stm32_spi_enable_clock(LCD_SPI);
+  gpio_init_af(LCD_MOSI_GPIO, LCD_GPIO_AF, GPIO_PIN_SPEED_HIGH);
+  gpio_init_af(LCD_CLK_GPIO, LCD_GPIO_AF, GPIO_PIN_SPEED_HIGH);
 
   // APB1 clock / 2 = 133nS per clock
   LCD_SPI->CR1 = 0; // Clear any mode error
@@ -77,29 +85,13 @@ void lcdHardwareInit()
   LCD_SPI->CR1 |= SPI_CR1_MSTR;	// Make sure in case SSM/SSI needed to be set first
   LCD_SPI->CR1 |= SPI_CR1_SPE;
 
+  gpio_init(LCD_NCS_GPIO, GPIO_OUT, GPIO_PIN_SPEED_MEDIUM);
   LCD_NCS_HIGH();
 
-  GPIO_InitStructure.GPIO_Pin = LCD_NCS_GPIO_PIN;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_25MHz;
-  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-  GPIO_Init(LCD_NCS_GPIO, &GPIO_InitStructure);
+  gpio_init(LCD_RST_GPIO, GPIO_OUT, GPIO_PIN_SPEED_MEDIUM);
+  gpio_init(LCD_A0_GPIO, GPIO_OUT, GPIO_PIN_SPEED_HIGH);
 
-  GPIO_InitStructure.GPIO_Pin = LCD_RST_GPIO_PIN;
-  GPIO_Init(LCD_RST_GPIO, &GPIO_InitStructure);
-
-  GPIO_InitStructure.GPIO_Pin = LCD_A0_GPIO_PIN;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-  GPIO_Init(LCD_SPI_GPIO, &GPIO_InitStructure);
-
-  GPIO_InitStructure.GPIO_Pin = LCD_CLK_GPIO_PIN | LCD_MOSI_GPIO_PIN;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-  GPIO_Init(LCD_SPI_GPIO, &GPIO_InitStructure);
-
-  GPIO_PinAFConfig(LCD_SPI_GPIO, LCD_MOSI_GPIO_PinSource, LCD_GPIO_AF);
-  GPIO_PinAFConfig(LCD_SPI_GPIO, LCD_CLK_GPIO_PinSource, LCD_GPIO_AF);
-
+  stm32_dma_enable_clock(LCD_DMA);
   LCD_DMA_Stream->CR &= ~DMA_SxCR_EN; // Disable DMA
   LCD_DMA->HIFCR = LCD_DMA_FLAGS; // Write ones to clear bits
   LCD_DMA_Stream->CR =  DMA_SxCR_PL_0 | DMA_SxCR_MINC | DMA_SxCR_DIR_0;
@@ -114,6 +106,14 @@ void lcdHardwareInit()
 
   NVIC_SetPriority(LCD_DMA_Stream_IRQn, 7);
   NVIC_EnableIRQ(LCD_DMA_Stream_IRQn);
+
+#if defined(OLED_VCC_CS)
+  gpio_init(OLED_VCC_CS, GPIO_OUT, GPIO_PIN_SPEED_LOW);
+
+  // Coming from bootloader or EM, screen is already on
+  if (WAS_RESET_BY_WATCHDOG_OR_SOFTWARE())
+    gpio_set(OLED_VCC_CS);
+#endif
 }
 
 #if defined(SSD1309_LCD)
@@ -153,37 +153,69 @@ void lcdStart()
    lcdWriteCommand(0xA4);  // Disable Entire Display On
    lcdWriteCommand(0xA6);  // Set Normal Display (not inverted)
    lcdWriteCommand(0x2E);  // Deactivate scroll
+#if defined(OLED_VCC_CS)
+   delay_ms(100);
+   gpio_set(OLED_VCC_CS);
+#endif
 #else
 #if defined(LCD_VERTICAL_INVERT)
   // T12 and TX12 have the screen inverted.
-  lcdWriteCommand(0xe2); // (14) Soft reset
+  #if defined(RADIO_V12)
+    lcdWriteCommand(0xe2); // (14) Soft reset
+    lcdWriteCommand(0xa0);  // Set seg
+    lcdWriteCommand(0xc8);  // Set com
+    lcdWriteCommand(0xf8);  // Set booster
+    lcdWriteCommand(0x00);  // 5x
+    lcdWriteCommand(0xa2); // Set bias=1/6
+    lcdWriteCommand(0x26);  // Set internal rb/ra=5.0
+    lcdWriteCommand(0x2f);  // All built-in power circuits on
+    lcdWriteCommand(0x81);  // Set contrast
+    lcdWriteCommand(0x1F);  // Set Vop
+    lcdWriteCommand(0xa6);  // Set display mode
+  #else  
+    lcdWriteCommand(0xe2); // (14) Soft reset
 #if defined(LCD_HORIZONTAL_INVERT)
-  lcdWriteCommand(0xa1); // Set seg
+    lcdWriteCommand(0xa1); // Set seg
 #else 
-  lcdWriteCommand(0xa0); // Set seg
+    lcdWriteCommand(0xa0); // Set seg
 #endif
-  lcdWriteCommand(0xc8); // Set com
-  lcdWriteCommand(0xf8); // Set booster
-  lcdWriteCommand(0x00); // 5x
-  lcdWriteCommand(0xa3); // Set bias=1/6
-  lcdWriteCommand(0x22); // Set internal rb/ra=5.0
-  lcdWriteCommand(0x2f); // All built-in power circuits on
-  lcdWriteCommand(0x24); // Power control set
-  lcdWriteCommand(0x81); // Set contrast
-  lcdWriteCommand(0x0A); // Set Vop
-  lcdWriteCommand(0xa6); // Set display mode
+    lcdWriteCommand(0xc8); // Set com
+    lcdWriteCommand(0xf8); // Set booster
+    lcdWriteCommand(0x00); // 5x
+    lcdWriteCommand(0xa3); // Set bias=1/6
+    lcdWriteCommand(0x22); // Set internal rb/ra=5.0
+    lcdWriteCommand(0x2f); // All built-in power circuits on
+    lcdWriteCommand(0x24); // Power control set
+    lcdWriteCommand(0x81); // Set contrast
+    lcdWriteCommand(0x0A); // Set Vop
+    lcdWriteCommand(0xa6); // Set display mode
+  #endif
 #else
-  lcdWriteCommand(0xe2); // (14) Soft reset
-  lcdWriteCommand(0xa1); // Set seg
-  lcdWriteCommand(0xc0); // Set com
-  lcdWriteCommand(0xf8); // Set booster
-  lcdWriteCommand(0x00); // 5x
-  lcdWriteCommand(0xa3); // Set bias=1/6
-  lcdWriteCommand(0x22); // Set internal rb/ra=5.0
-  lcdWriteCommand(0x2f); // All built-in power circuits on
-  lcdWriteCommand(0x81); // Set contrast
-  lcdWriteCommand(0x36); // Set Vop
-  lcdWriteCommand(0xa6); // Set display mode
+  #if defined(RADIO_V14)
+    lcdWriteCommand(0xe2); // (14) Soft reset
+    lcdWriteCommand(0xa1); // Set seg
+    lcdWriteCommand(0xc0);  // Set com
+    lcdWriteCommand(0xf8);  // Set booster
+    lcdWriteCommand(0x00);  // 5x
+    lcdWriteCommand(0xa2); // Set bias=1/6
+    lcdWriteCommand(0x26);  // Set internal rb/ra=5.0
+    lcdWriteCommand(0x2f);  // All built-in power circuits on
+    lcdWriteCommand(0x81);  // Set contrast
+    lcdWriteCommand(0x1F);  // Set Vop
+    lcdWriteCommand(0xa6);  // Set display mode
+  #else  
+    lcdWriteCommand(0xe2); // (14) Soft reset
+    lcdWriteCommand(0xa1); // Set seg
+    lcdWriteCommand(0xc0); // Set com
+    lcdWriteCommand(0xf8); // Set booster
+    lcdWriteCommand(0x00); // 5x
+    lcdWriteCommand(0xa3); // Set bias=1/6
+    lcdWriteCommand(0x22); // Set internal rb/ra=5.0
+    lcdWriteCommand(0x2f); // All built-in power circuits on
+    lcdWriteCommand(0x81); // Set contrast
+    lcdWriteCommand(0x36); // Set Vop
+    lcdWriteCommand(0xa6); // Set display mode
+  #endif
 #endif
 #if defined(BOOT)
   lcdSetRefVolt(LCD_CONTRAST_DEFAULT);
@@ -333,7 +365,12 @@ void lcdOff()
   to re-init LCD without any delay
   */
   lcdWriteCommand(0xAE); // LCD sleep
+#if defined(OLED_VCC_CS)
+  gpio_clear(OLED_VCC_CS);
+  delay_ms(100);
+#else
   delay_ms(3); // Wait for caps to drain
+#endif
 }
 
 void lcdReset()
@@ -397,11 +434,8 @@ void lcdInitFinish()
   */
 
   if (LCD_DELAY_NEEDED()) {
-#if !defined(BOOT)
-    while (g_tmr10ms < (RESET_WAIT_DELAY_MS / 10)); // wait measured from the power-on
-#else
-    delay_ms(RESET_WAIT_DELAY_MS);
-#endif
+    uint32_t end = timersGetMsTick() + RESET_WAIT_DELAY_MS;
+    while (timersGetMsTick() < end);
   }
 
   lcdStart();
@@ -419,6 +453,18 @@ void lcdSetRefVolt(uint8_t val)
   WAIT_FOR_DMA_END();
 #endif
 
+#if defined(RADIO_V12) || defined(RADIO_V14)
+  lcdWriteCommand(0x81);                      // Set Vop
+  lcdWriteCommand(val+LCD_CONTRAST_OFFSET+20);// 0-255
+#else
   lcdWriteCommand(0x81); // Set Vop
   lcdWriteCommand(val+LCD_CONTRAST_OFFSET); // 0-255
+#endif
 }
+
+#if LCD_W == 128
+void lcdSetInvert(bool invert)
+{
+   lcdWriteCommand(invert ? 0xA7 : 0xA6);
+}
+#endif

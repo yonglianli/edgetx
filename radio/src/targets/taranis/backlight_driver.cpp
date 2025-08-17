@@ -19,27 +19,25 @@
  * GNU General Public License for more details.
  */
 
+#include "hal/gpio.h"
+#include "stm32_gpio.h"
+#include "stm32_timer.h"
+
 #include "board.h"
 
-#if !defined(BACKLIGHT_GPIO)
+#if !defined(BACKLIGHT_GPIO) && (!defined(BACKLIGHT_GPIO_1) || !defined(BACKLIGHT_GPIO_2))
   // no backlight
   void backlightInit() {}
   void backlightEnable(uint8_t level) {}
   void backlightFullOn() {}
   void backlightDisable() {}
-  uint8_t isBacklightEnabled() {return false;}
+  bool isBacklightEnabled() { return false; }
 #elif defined(PCBX9E)
 void backlightInit()
 {
-  GPIO_InitTypeDef GPIO_InitStructure;
-  GPIO_InitStructure.GPIO_Pin = BACKLIGHT_GPIO_PIN_1|BACKLIGHT_GPIO_PIN_2;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-  GPIO_Init(BACKLIGHT_GPIO, &GPIO_InitStructure);
-  GPIO_PinAFConfig(BACKLIGHT_GPIO, BACKLIGHT_GPIO_PinSource_1, BACKLIGHT_GPIO_AF_1);
-  GPIO_PinAFConfig(BACKLIGHT_GPIO, BACKLIGHT_GPIO_PinSource_2, BACKLIGHT_GPIO_AF_1);
+  gpio_init_af(BACKLIGHT_GPIO_1, BACKLIGHT_GPIO_AF, GPIO_PIN_SPEED_LOW);
+  gpio_init_af(BACKLIGHT_GPIO_2, BACKLIGHT_GPIO_AF, GPIO_PIN_SPEED_LOW);
+  stm32_timer_enable_clock(BACKLIGHT_TIMER);
   BACKLIGHT_TIMER->ARR = 100;
   BACKLIGHT_TIMER->PSC = BACKLIGHT_TIMER_FREQ / 50000 - 1; // 20us * 100 = 2ms => 500Hz
   BACKLIGHT_TIMER->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC2M_1 | TIM_CCMR1_OC2M_2; // PWM
@@ -67,22 +65,16 @@ void backlightDisable()
   BACKLIGHT_TIMER->CCR2 = 0;
 }
 
-uint8_t isBacklightEnabled()
+bool isBacklightEnabled()
 {
   return (BACKLIGHT_TIMER->CCR1 != 0 || BACKLIGHT_TIMER->CCR2 != 0);
 }
 #elif defined(PCBX9DP)
 void backlightInit()
 {
-  GPIO_InitTypeDef GPIO_InitStructure;
-  GPIO_InitStructure.GPIO_Pin = BACKLIGHT_GPIO_PIN_1 | BACKLIGHT_GPIO_PIN_2;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-  GPIO_Init(BACKLIGHT_GPIO, &GPIO_InitStructure);
-  GPIO_PinAFConfig(BACKLIGHT_GPIO, BACKLIGHT_GPIO_PinSource_1, BACKLIGHT_GPIO_AF_1);
-  GPIO_PinAFConfig(BACKLIGHT_GPIO, BACKLIGHT_GPIO_PinSource_2, BACKLIGHT_GPIO_AF_1);
+  gpio_init_af(BACKLIGHT_GPIO_1, BACKLIGHT_GPIO_AF, GPIO_PIN_SPEED_LOW);
+  gpio_init_af(BACKLIGHT_GPIO_2, BACKLIGHT_GPIO_AF, GPIO_PIN_SPEED_LOW);
+  stm32_timer_enable_clock(BACKLIGHT_TIMER);
   BACKLIGHT_TIMER->ARR = 100;
   BACKLIGHT_TIMER->PSC = BACKLIGHT_TIMER_FREQ / 50000 - 1; // 20us * 100 = 2ms => 500Hz
   BACKLIGHT_TIMER->CCMR1 = TIM_CCMR1_OC2M_1 | TIM_CCMR1_OC2M_2; // PWM
@@ -111,21 +103,16 @@ void backlightDisable()
   BACKLIGHT_TIMER->CCR2 = 0;
 }
 
-uint8_t isBacklightEnabled()
+bool isBacklightEnabled()
 {
   return (BACKLIGHT_TIMER->CCR4 != 0 || BACKLIGHT_TIMER->CCR2 != 0);
 }
 #elif defined(PCBX7) || defined(PCBXLITE) || defined(PCBX9LITE)
 void backlightInit()
 {
-  GPIO_InitTypeDef GPIO_InitStructure;
-  GPIO_InitStructure.GPIO_Pin = BACKLIGHT_GPIO_PIN;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-  GPIO_Init(BACKLIGHT_GPIO, &GPIO_InitStructure);
-  GPIO_PinAFConfig(BACKLIGHT_GPIO, BACKLIGHT_GPIO_PinSource, BACKLIGHT_GPIO_AF);
+  gpio_init_af(BACKLIGHT_GPIO, BACKLIGHT_GPIO_AF, GPIO_PIN_SPEED_LOW);
+  stm32_timer_enable_clock(BACKLIGHT_TIMER);
+
 #if defined(BACKLIGHT_BDTR) // TODO perhaps it can be always done
   BACKLIGHT_TIMER->BDTR = BACKLIGHT_BDTR; // Enable outputs
 #endif
@@ -157,21 +144,16 @@ void backlightDisable()
   BACKLIGHT_COUNTER_REGISTER = 0;
 }
 
-uint8_t isBacklightEnabled()
+bool isBacklightEnabled()
 {
   return BACKLIGHT_COUNTER_REGISTER != 0;
 }
 #else
 void backlightInit()
 {
-  GPIO_InitTypeDef GPIO_InitStructure;
-  GPIO_InitStructure.GPIO_Pin = BACKLIGHT_GPIO_PIN;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-  GPIO_Init(BACKLIGHT_GPIO, &GPIO_InitStructure);
-  GPIO_PinAFConfig(BACKLIGHT_GPIO, BACKLIGHT_GPIO_PinSource, BACKLIGHT_GPIO_AF);
+  gpio_init_af(BACKLIGHT_GPIO, BACKLIGHT_GPIO_AF, GPIO_PIN_SPEED_LOW);
+  stm32_timer_enable_clock(BACKLIGHT_TIMER);  
+  
   BACKLIGHT_TIMER->ARR = 100;
   BACKLIGHT_TIMER->PSC = BACKLIGHT_TIMER_FREQ / 50000 - 1; // 20us * 100 = 2ms => 500Hz
   BACKLIGHT_TIMER->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2; // PWM
@@ -196,7 +178,7 @@ void backlightDisable()
   BACKLIGHT_TIMER->CCR1 = 0;
 }
 
-uint8_t isBacklightEnabled()
+bool isBacklightEnabled()
 {
   return BACKLIGHT_TIMER->CCR1 != 0;
 }

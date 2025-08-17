@@ -70,8 +70,8 @@ inline void setZoneOptionValue(ZoneOptionValue& zov, unsigned int value)
 inline ZoneOptionValueEnum zoneValueEnumFromType(ZoneOption::Type type)
 {
   switch(type) {
-  case ZoneOption::File:
   case ZoneOption::String:
+  case ZoneOption::File:
     return ZOV_String;
 
   case ZoneOption::Integer:
@@ -86,10 +86,6 @@ inline ZoneOptionValueEnum zoneValueEnumFromType(ZoneOption::Type type)
   case ZoneOption::Source:
     return ZOV_Source;
 
-  case ZoneOption::Timer:
-  case ZoneOption::Switch:
-  case ZoneOption::TextSize:
-  case ZoneOption::Align:
   default:
     return ZOV_Unsigned;
   }
@@ -132,9 +128,16 @@ bool RadioLayout::CustomScreenData::isEmpty() const
   return strlen(layoutId) == 0;
 }
 
+void RadioLayout::CustomScreens::clear()
+{
+  for (int i = 0; i < MAX_CUSTOM_SCREENS; i++) {
+    customScreenData[i] = CustomScreenData();
+  }
+}
+
 void RadioLayout::init(const char* layoutId, CustomScreens& customScreens)
 {
-  memset(&customScreens, 0, sizeof(CustomScreens));
+  customScreens.clear();
 
   for (int i = 0; i < MAX_CUSTOM_SCREENS; i++) {
     if (i == 0)

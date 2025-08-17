@@ -30,6 +30,24 @@
    (stream) == LL_DMA_STREAM_4 || (stream) == LL_DMA_STREAM_5 || \
    (stream) == LL_DMA_STREAM_6 || (stream) == LL_DMA_STREAM_7)
 
+#if defined(STM32H7RS)
+
+inline static bool stm32_dma_check_tc_flag(DMA_TypeDef* DMAx, uint32_t DMA_Stream)
+{
+  if (!LL_DMA_IsActiveFlag_TC(DMAx, DMA_Stream)) return false;
+  LL_DMA_ClearFlag_TC(DMAx, DMA_Stream);
+  return true;
+}
+
+inline static bool stm32_dma_check_ht_flag(DMA_TypeDef* DMAx, uint32_t DMA_Stream)
+{
+  if (!LL_DMA_IsActiveFlag_HT(DMAx, DMA_Stream)) return false;
+  LL_DMA_ClearFlag_HT(DMAx, DMA_Stream);
+  return true;
+}
+
+#else // STM32H7RS
+
 inline static bool stm32_dma_check_tc_flag(DMA_TypeDef* DMAx, uint32_t DMA_Stream)
 {
   switch(DMA_Stream) {
@@ -109,5 +127,7 @@ inline static bool stm32_dma_check_ht_flag(DMA_TypeDef* DMAx, uint32_t DMA_Strea
 
   return true;
 }
+
+#endif // !STM32H7RS
 
 void stm32_dma_enable_clock(DMA_TypeDef* DMAx);

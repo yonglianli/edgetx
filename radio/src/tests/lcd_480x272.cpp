@@ -22,21 +22,20 @@
 #include <gtest/gtest.h>
 #include <math.h>
 
-#define SWAP_DEFINED
-#include "location.h"
-#include "opentx.h"
-
 #if defined(COLORLCD)
 
+#include "simpgmspace.h"
+#include "bitmaps.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "stb/stb_image_write.h"
 
 void convert_RGB565_to_RGB888(uint8_t* dst, const BitmapBuffer* src, coord_t w,
                               coord_t h)
 {
   for (int y = 0; y < src->height(); y++) {
     for (int x = 0; x < src->width(); x++) {
-      RGB_SPLIT(*src->getPixelPtr(x, y), r, g, b);
+      RGB_SPLIT(*src->getPixelPtrAbs(x, y), r, g, b);
       *(dst++) = (uint8_t)(r << 3);
       *(dst++) = (uint8_t)(g << 2);
       *(dst++) = (uint8_t)(b << 3);
@@ -46,17 +45,17 @@ void convert_RGB565_to_RGB888(uint8_t* dst, const BitmapBuffer* src, coord_t w,
 
 void dumpImage(const std::string& filename, const BitmapBuffer* dc)
 {
-  std::string fullpath = TESTS_PATH "/images/color/failed_" + filename;
-
+  std::string fullpath = simuFatfsGetRealPath("images/color/failed_" + filename);
   TRACE("dumping image '%s'", fullpath.c_str());
 
   // allocate enough for 3 channels
-  auto pixels = dc->width() * dc->height();
+  std::vector<uint8_t> img;
   auto stride = dc->width() * 3;
-  uint8_t* img = (uint8_t*)malloc(pixels * 3);
-  convert_RGB565_to_RGB888(img, dc, dc->width(), dc->height());
-  stbi_write_png(fullpath.c_str(), dc->width(), dc->height(), 3, img, stride);
-  free(img);
+  auto pixel_bytes = stride * dc->height();
+  img.resize(pixel_bytes);
+
+  convert_RGB565_to_RGB888(img.data(), dc, dc->width(), dc->height());
+  stbi_write_png(fullpath.c_str(), dc->width(), dc->height(), 3, img.data(), stride);
 }
 
 bool checkScreenshot_colorlcd(const BitmapBuffer* dc, const char* test)
@@ -70,7 +69,7 @@ bool checkScreenshot_colorlcd(const BitmapBuffer* dc, const char* test)
   filename += 'x' + std::to_string(LCD_H);
   filename += ".png";
 
-  std::string fullpath = TESTS_PATH "/images/color/" + filename;
+  std::string fullpath = "images/color/" + filename;
 
   std::unique_ptr<BitmapBuffer> testPict(
       BitmapBuffer::loadBitmap(fullpath.c_str()));
@@ -81,7 +80,7 @@ bool checkScreenshot_colorlcd(const BitmapBuffer* dc, const char* test)
 
   for (int y = 0; y < LCD_H; y++) {
     for (int x = 0; x < LCD_W; x++) {
-      if (*testPict->getPixelPtr(x, y) != *dc->getPixelPtr(x, y)) {
+      if (*testPict->getPixelPtrAbs(x, y) != *dc->getPixelPtrAbs(x, y)) {
         dumpImage(filename, dc);
         return false;
       }
@@ -99,11 +98,11 @@ TEST(Lcd_colorlcd, lines)
   dc.setClippingRect(50, 400, 50, 230);
 
   for (int x = 10; x <= 100; x += 10) {
-    dc.drawLine(x, x, x + 200, x + 50, 0xF0, COLOR_THEME_SECONDARY1);
+    dc.drawLine(x, x, x + 200, x + 50, DOTTED, COLOR_THEME_SECONDARY1);
   }
 
   for (int x = 200; x >= 100; x -= 10) {
-    dc.drawLine(x, x, x - 50, x + 100, 0xF0, COLOR_THEME_SECONDARY1);
+    dc.drawLine(x, x, x - 50, x + 100, DOTTED, COLOR_THEME_SECONDARY1);
   }
 
   dc.clearClippingRect();
@@ -117,7 +116,7 @@ TEST(Lcd_colorlcd, vline)
   dc.clear(COLOR_THEME_SECONDARY3);
 
   for (int x = 0; x < 100; x += 2) {
-    dc.drawSolidVerticalLine(x, x / 2, 12, COLOR_THEME_SECONDARY1);
+    dc.drawVerticalLine(x, x / 2, 12, SOLID, COLOR_THEME_SECONDARY1);
   }
   EXPECT_TRUE(checkScreenshot_colorlcd(&dc, "vline"));
 }
@@ -187,7 +186,7 @@ TEST(Lcd_colorlcd, transparency)
   for (int n = 0; n < 10; n++) {
     int x = 120 + n * 20;
     int y = 80 + n * 10;
-    int color = COLOR(n / 2 + 5);
+    int color = COLOR((n / 2 + 4));
     int size = 100;
     dc.drawFilledRect(x, y, size, size, SOLID, color, OPACITY(8));
   }
@@ -230,22 +229,27 @@ TEST(Lcd_colorlcd, clipping)
 
   dc.clear(COLOR_THEME_SECONDARY3);
 
-  dc.drawSolidVerticalLine(100, 0, LCD_H, COLOR_THEME_SECONDARY1);
-  dc.drawSolidVerticalLine(400, 0, LCD_H, COLOR_THEME_SECONDARY1);
+  coord_t x1 = LCD_W / 4;
+  coord_t x2 = x1 * 3;
+  coord_t y1 = LCD_H / 4;
+  coord_t y2 = y1 * 3;
 
-  dc.drawSolidHorizontalLine(0, 50, LCD_W, COLOR_THEME_SECONDARY1);
-  dc.drawSolidHorizontalLine(0, 200, LCD_W, COLOR_THEME_SECONDARY1);
+  dc.drawVerticalLine(x1, 0, LCD_H, SOLID, COLOR_THEME_SECONDARY1);
+  dc.drawVerticalLine(x2, 0, LCD_H, SOLID, COLOR_THEME_SECONDARY1);
 
-  dc.setClippingRect(100, 400, 50, 200);
+  dc.drawHorizontalLine(0, y1, LCD_W, SOLID, COLOR_THEME_SECONDARY1);
+  dc.drawHorizontalLine(0, y2, LCD_W, SOLID, COLOR_THEME_SECONDARY1);
 
-  dc.drawSolidHorizontalLine(0, 80, LCD_W, COLOR_THEME_SECONDARY1);
-  dc.drawHorizontalLine(0, 81, LCD_W, SOLID, COLOR_THEME_SECONDARY1);
+  dc.setClippingRect(x1, x2, y1, y2);
 
-  dc.drawSolidVerticalLine(150, 0, LCD_H, COLOR_THEME_SECONDARY1);
-  dc.drawVerticalLine(151, 0, LCD_H, SOLID, COLOR_THEME_SECONDARY1);
+  dc.drawHorizontalLine(0, y1 + 30, LCD_W, SOLID, COLOR_THEME_SECONDARY1);
+  dc.drawHorizontalLine(0, y1 + 31, LCD_W, SOLID, COLOR_THEME_SECONDARY1);
 
-  dc.drawSolidRect(70, 20, 50, 50, 2, COLOR_THEME_SECONDARY1);
-  dc.drawRect(380, 20, 50, 50, 2, SOLID, COLOR_THEME_SECONDARY1);
+  dc.drawVerticalLine(x1 + 50, 0, LCD_H, SOLID, COLOR_THEME_SECONDARY1);
+  dc.drawVerticalLine(x1 + 51, 0, LCD_H, SOLID, COLOR_THEME_SECONDARY1);
+
+  dc.drawSolidRect(x1 - 30, y1 - 30, 50, 50, 2, COLOR_THEME_SECONDARY1);
+  dc.drawRect(x2 - 20, y1 - 30, 50, 50, 2, SOLID, COLOR_THEME_SECONDARY1);
 
   dc.clearClippingRect();
   EXPECT_TRUE(checkScreenshot_colorlcd(&dc, "clipping"));
@@ -258,8 +262,7 @@ TEST(Lcd_colorlcd, bitmap)
   dc.clear(COLOR_THEME_SECONDARY3);
 
   dc.setClippingRect(100, 400, 50, 200);
-  std::unique_ptr<BitmapBuffer> bmp(
-      BitmapBuffer::loadBitmap(TESTS_PATH "/images/color/edgetx.png"));
+  std::unique_ptr<BitmapBuffer> bmp(BitmapBuffer::loadBitmap("images/color/edgetx.png"));
   dc.drawBitmap(0, 0, bmp.get());
   dc.drawBitmap(320, 0, bmp.get());
   dc.drawBitmap(0, 150, bmp.get());
@@ -268,22 +271,28 @@ TEST(Lcd_colorlcd, bitmap)
   EXPECT_TRUE(checkScreenshot_colorlcd(&dc, "bitmap"));
 }
 
+static const uint8_t mask_menu_radio[] = {
+#include "images/color/mask_menu_radio.lbm"
+};
+
+extern MaskBitmap* _decompressed_mask(const uint8_t* lz4_compressed);
+
 TEST(Lcd_colorlcd, masks)
 {
   BitmapBuffer dc(BMP_RGB565, LCD_W, LCD_H);
 
   dc.clear(COLOR_THEME_SECONDARY3);
 
-  BitmapBuffer* mask =
-      BitmapBuffer::loadMask(TESTS_PATH "/images/color/mask_menu_radio.png");
-  for (int i = 0; i < LCD_W; i += mask->width()) {
-    for (int j = 0; j < LCD_H; j += mask->height()) {
-      dc.drawMask(i, j, mask, COLOR2FLAGS(BLACK));
+  MaskBitmap* mask = _decompressed_mask(mask_menu_radio);
+
+  for (int i = 0; i < LCD_W; i += mask->width) {
+    for (int j = 0; j < LCD_H; j += mask->height) {
+      dc.drawBitmapPattern(i, j, mask, COLOR_BLACK);
     }
   }
 
   EXPECT_TRUE(checkScreenshot_colorlcd(&dc, "masks"));
-  delete mask;
+  free(mask);
 }
 
 #if 0
@@ -345,9 +354,9 @@ TEST(Lcd_colorlcd, darkmode)
 {
   BitmapBuffer dc(BMP_RGB565, LCD_W, LCD_H);
 
-  dc.clear(COLOR2FLAGS(BLACK));
+  dc.clear(COLOR_BLACK);
 
-  dc.drawText(20, 28, "The quick brown fox jumps over the lazy dog", COLOR2FLAGS(WHITE));
+  dc.drawText(20, 28, "The quick brown fox jumps over the lazy dog", COLOR_WHITE);
   dc.drawSolidFilledRect(28, 56, 422, 2, COLOR2FLAGS(RGB(0xFF, 0, 0)));
   dc.drawBitmapPattern(LCD_W/2 - LBM_USB_PLUGGED_W/2,
                        LCD_H/2 - LBM_USB_PLUGGED_H/2,

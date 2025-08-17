@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -25,7 +26,7 @@
 #include <QSpinBox>
 #include <QString>
 
-class QRegExpValidator;
+class QRegularExpressionValidator;
 
 class AutoHexSpinBox : public QSpinBox, public AutoWidget
 {
@@ -56,6 +57,6 @@ class AutoHexSpinBox : public QSpinBox, public AutoWidget
 
   private:
     unsigned int *m_field;
-    QRegExpValidator *m_validator;
+    QRegularExpressionValidator *m_validator;
     unsigned int m_length;
 };

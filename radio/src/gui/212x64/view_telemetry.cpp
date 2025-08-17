@@ -19,11 +19,11 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 #define STATUS_BAR_Y     (7*FH+1)
 
-uint8_t s_frsky_view = 0;
+uint8_t selectedTelemView = 0;
 
 #define BAR_LEFT    30
 #define BAR_WIDTH   152
@@ -39,7 +39,7 @@ void displayRssiLine()
     lcdDrawFilledRect(BAR_LEFT+1, 58, 19*rssi/25, 5, (rssi < g_model.rfAlarms.warning) ? DOTTED : SOLID);
   }
   else {
-    lcdDrawText(7*FW, STATUS_BAR_Y, STR_NODATA, BLINK);
+    lcdDrawText(LCD_W/2, STATUS_BAR_Y, STR_NODATA, BLINK|CENTERED);
     lcdInvertLastLine();
   }
 }
@@ -126,6 +126,12 @@ bool displayNumbersTelemetryScreen(TelemetryScreenData & screen)
             y += FH/2;
           }
         }
+        if (field >= MIXSRC_FIRST_GVAR && field <= MIXSRC_LAST_GVAR) {
+          if (g_model.gvars[field - MIXSRC_FIRST_GVAR].name[0])
+            lcdDrawSizedText(pos[j], 1+FH+2*FH*i,g_model.gvars[field - MIXSRC_FIRST_GVAR].name, LEN_GVAR_NAME, 0);
+          else
+            drawSource(pos[j], 1+FH+2*FH*i, field, 0);
+        }
         else if (field >= MIXSRC_FIRST_TELEM && isGPSSensor(1+(field-MIXSRC_FIRST_TELEM)/3) && telemetryItems[(field-MIXSRC_FIRST_TELEM)/3].isAvailable()) {
           // we don't display GPS name, no space for it, but we shift x by some pixel to allow it to fit on max coord
           x -=2;
@@ -161,7 +167,7 @@ void displayCustomTelemetryScreen(uint8_t index)
 {
   TelemetryScreenData & screen = g_model.screens[index];
 
-  if (IS_BARS_SCREEN(s_frsky_view)) {
+  if (IS_BARS_SCREEN(selectedTelemView)) {
     return displayGaugesTelemetryScreen(screen);
   }
 
@@ -171,19 +177,19 @@ void displayCustomTelemetryScreen(uint8_t index)
 bool displayTelemetryScreen()
 {
 #if defined(LUA)
-  if (TELEMETRY_SCREEN_TYPE(s_frsky_view) == TELEMETRY_SCREEN_TYPE_SCRIPT) {
+  if (TELEMETRY_SCREEN_TYPE(selectedTelemView) == TELEMETRY_SCREEN_TYPE_SCRIPT) {
     return isTelemetryScriptAvailable(); // contents will be drawn by Lua Task
   }
 #endif
 
-  if (TELEMETRY_SCREEN_TYPE(s_frsky_view) == TELEMETRY_SCREEN_TYPE_NONE) {
+  if (TELEMETRY_SCREEN_TYPE(selectedTelemView) == TELEMETRY_SCREEN_TYPE_NONE) {
     return false;
   }
 
   drawTelemetryTopBar();
 
-  if (s_frsky_view < MAX_TELEMETRY_SCREENS) {
-    displayCustomTelemetryScreen(s_frsky_view);
+  if (selectedTelemView < MAX_TELEMETRY_SCREENS) {
+    displayCustomTelemetryScreen(selectedTelemView);
   }
 
   return true;

@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "hal/adc_driver.h"
 #include "input_mapping.h"
 #include "mixes.h"
@@ -100,6 +100,26 @@ void setVendorSpecificModelDefaults(uint8_t id)
 #endif
 }
 
+#if defined(FUNCTION_SWITCHES)
+void initCustomSwitches()
+{
+  for (int i = 0; i < switchGetMaxSwitches(); i += 1) {
+    if (switchIsCustomSwitch(i)) {
+      uint8_t idx = switchGetCustomSwitchIdx(i);
+      g_model.customSwitches[idx].type = SWITCH_GLOBAL;
+      g_model.customSwitches[idx].group = 0;
+      g_model.customSwitches[idx].start = FS_START_PREVIOUS;
+      g_model.customSwitches[idx].state = 0;
+      g_model.customSwitches[idx].name[0] = 0;
+#if defined(FUNCTION_SWITCHES_RGB_LEDS)
+      g_model.customSwitches[idx].offColor.setColor(0);
+      g_model.customSwitches[idx].onColor.setColor(0xFFFFFF);
+#endif
+    }
+  }
+}
+#endif
+
 void applyDefaultTemplate()
 {
   setDefaultInputs();
@@ -110,29 +130,18 @@ void applyDefaultTemplate()
   setDefaultModelRegistrationID();
 
 #if defined(FUNCTION_SWITCHES)
-  g_model.functionSwitchConfig = DEFAULT_FS_CONFIG;
-  g_model.functionSwitchGroup = DEFAULT_FS_GROUPS;
-  g_model.functionSwitchStartConfig = DEFAULT_FS_STARTUP_CONFIG;
-  g_model.functionSwitchLogicalState = 0;
+  initCustomSwitches();
 #endif
 
 #if defined(COLORLCD)
-
-  loadDefaultLayout();
-
-  // enable switch warnings
-  for (int i = 0; i < MAX_SWITCHES; i++) {
-    if (SWITCH_EXISTS(i)) {
-      g_model.switchWarningState |= (1 << (3 * i));
-    }
-  }
-#else
-  // enable switch warnings
-  for (int i = 0; i < MAX_SWITCHES; i++) {
-    if (SWITCH_WARNING_ALLOWED(i))
-      g_model.switchWarningState |= (1 << (3 * i));
-  }
+  LayoutFactory::loadDefaultLayout();
 #endif
+
+  // enable switch warnings
+  for (uint64_t i = 0; i < switchGetMaxAllSwitches(); i++) {
+    if (SWITCH_WARNING_ALLOWED(i))
+      g_model.setSwitchWarning(i, 1);
+  }
 
 #if defined(USE_HATS_AS_KEYS)
   g_model.hatsMode = HATSMODE_GLOBAL;

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,11 +19,10 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _HEXINTERFACE_H_
-#define _HEXINTERFACE_H_
+#pragma once
 
-#include <inttypes.h>
 #include <QTextStream>
+#include <QString>
 
 class HexInterface {
   public:
@@ -39,5 +39,3 @@ class HexInterface {
 
     QTextStream & stream;
 };
-
-#endif // _HEXINTERFACE_H_

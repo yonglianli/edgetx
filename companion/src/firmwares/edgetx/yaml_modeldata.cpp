@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -30,7 +31,9 @@
 #include "yaml_sensordata.h"
 #include "yaml_screendata.h"
 #include "yaml_usbjoystickdata.h"
+#include "yaml_switchconfig.h"
 
+#include "boardjson.h"
 #include "modeldata.h"
 #include "output_data.h"
 #include "eeprominterface.h"
@@ -38,8 +41,59 @@
 #include "helpers.h"
 
 #include <string>
+#include <QMessageBox>
+#include <QPushButton>
 
-SemanticVersion version;  // used for data conversions
+void YamlValidateLabelsNames(ModelData& model, Board::Type board)
+{
+  YamlValidateName(model.name, board);
+
+  QStringList lst = QString(model.labels).split(',', Qt::SkipEmptyParts);
+
+  for (int i = lst.count() - 1; i >= 0; i--) {
+    YamlValidateLabel(lst[i]);
+    if (lst.at(i).isEmpty())
+      lst.removeAt(i);
+  }
+
+  strcpy(model.labels, QString(lst.join(',')).toLatin1().data());
+
+  for (int i = 0; i < CPN_MAX_CURVES; i++) {
+    YamlValidateName(model.curves[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_EXPOS; i++) {
+    YamlValidateName(model.expoData[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_GVARS; i++) {
+    YamlValidateName(model.gvarData[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_FLIGHT_MODES; i++) {
+    YamlValidateName(model.flightModeData[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_SWITCHES_FUNCTION; i++) {
+    YamlValidateName(model.customSwitches[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_INPUTS; i++) {
+    YamlValidateName(model.inputNames[i], board);
+  }
+
+  for (int i = 0; i < CPN_MAX_CHNOUT; i++) {
+    YamlValidateName(model.limitData[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_MIXERS; i++) {
+    YamlValidateName(model.mixData[i].name, board);
+  }
+
+  for (int i = 0; i < CPN_MAX_SENSORS; i++) {
+    YamlValidateName(model.sensorData[i].label, board);
+  }
+}
 
 static const YamlLookupTable timerModeLut = {
     {TimerData::TIMERMODE_OFF, "OFF"},
@@ -56,10 +110,12 @@ static const YamlLookupTable trainerModeLut = {
   {  TRAINER_MODE_SLAVE_JACK, "SLAVE"  },
   {  TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE, "MASTER_SBUS_EXT"  },
   {  TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE, "MASTER_CPPM_EXT"  },
-  {  TRAINER_MODE_MASTER_SERIAL, "MASTER_BATT_COMP"  },
+  {  TRAINER_MODE_MASTER_SERIAL, "MASTER_SERIAL"  },
+  {  TRAINER_MODE_MASTER_SERIAL, "MASTER_BATT_COMP"  }, // depreciated, kept for conversion from older settings
   {  TRAINER_MODE_MASTER_BLUETOOTH, "MASTER_BT"  },
   {  TRAINER_MODE_SLAVE_BLUETOOTH, "SLAVE_BT"  },
   {  TRAINER_MODE_MULTI, "MASTER_MULTI"  },
+  {  TRAINER_MODE_CRSF, "MASTER_CRSF"  },
 };
 
 static const YamlLookupTable swashTypeLut = {
@@ -95,6 +151,25 @@ static const YamlLookupTable hatsModeLut = {
   {  GeneralSettings::HATSMODE_GLOBAL, "GLOBAL"  },
 };
 
+static const YamlLookupTable cfsSwitchConfig = {
+  {  0, "NONE"  },
+  {  1, "TOGGLE"  },
+  {  2, "2POS"  },
+  {  3, "3POS"  },
+  {  4, "GLOBAL"  },
+};
+
+static const YamlLookupTable cfsSwitchStart = {
+  {  0, "START_OFF"  },
+  {  1, "START_ON"  },
+  {  2, "START_PREVIOUS"  },
+};
+
+static const YamlLookupTable cfsSwitchLuaOverride = {
+  {  0, "OFF"  },
+  {  1, "ON"  },
+};
+
 struct YamlTrim {
   int mode = 0;
   int ref = 0;
@@ -115,38 +190,42 @@ struct YamlThrTrace {
 
   YamlThrTrace(unsigned int cpn_value)
   {
+    Board::Type board = getCurrentBoard();
+
     if (cpn_value == 0) {
-      src = RawSource(SOURCE_TYPE_STICK, 2/* throttle */);
+      if (Boards::getInputThrottleIndex(board) >= 0)
+        src = RawSource(SOURCE_TYPE_INPUT, Boards::getInputThrottleIndex(board) + 1);
+      else
+        src = RawSource(SOURCE_TYPE_NONE);
       return;
     }
-    cpn_value--;
-    Boards board(getCurrentBoard());
-    int pots = board.getCapability(Board::Pots);
-    int sliders = board.getCapability(Board::Sliders);
-    if (cpn_value < (unsigned int)(pots + sliders)) {
-      src = RawSource(SOURCE_TYPE_STICK, 4/* sticks */ + cpn_value);
-    }
-    else {
-      cpn_value -= pots + sliders;
-      src = RawSource(SOURCE_TYPE_CH, cpn_value);
-    }
+
+    int sticks = Boards::getCapability(board, Board::Sticks);
+    int pots = Boards::getCapability(board, Board::Pots);
+    int sliders = Boards::getCapability(board, Board::Sliders);
+
+    if (cpn_value <= (unsigned int)(pots + sliders))
+      src = RawSource(SOURCE_TYPE_INPUT, sticks + cpn_value);
+    else
+      src = RawSource(SOURCE_TYPE_CH, cpn_value - pots - sliders);
   }
 
   unsigned int toCpn()
   {
+    Board::Type board = getCurrentBoard();
+    int sticks = Boards::getCapability(board, Board::Sticks);
+
     switch (src.type) {
-      case SOURCE_TYPE_STICK:
-        if (src.index == 2 /* throttle */) {
+      case SOURCE_TYPE_INPUT:
+        if (src.index == Boards::getInputThrottleIndex(board) + 1)
           return 0;
-        } else {
-          return src.index - 4/* sticks */ + 1;
-        }
+        else
+          return src.index - sticks;
         break;
       case SOURCE_TYPE_CH: {
-        Boards board(getCurrentBoard());
-        int pots = board.getCapability(Board::Pots);
-        int sliders = board.getCapability(Board::Sliders);
-        return 1 + pots + sliders + src.index;
+        int pots = Boards::getCapability(board, Board::Pots);
+        int sliders = Boards::getCapability(board, Board::Sliders);
+        return pots + sliders + src.index;
       } break;
       default:
         break;
@@ -155,40 +234,12 @@ struct YamlThrTrace {
   }
 };
 
-//  EdgeTX 2.10.0 ADC refactor changed order of pots and sliders that affected interpretation of model warnings
-//  This conversion needs to be revisited when Companion is refactored to use ADC radio defns
-//  Make ADC orders backwards compatible
-
-//  the values below are based on radio\src\util\hw_defns\pots_config.py
-
-int adcPotsBeforeSliders()
-{
-  auto board = getCurrentBoard();
-
-  if (version >= SemanticVersion("2.10.0")) {
-    if (IS_TARANIS_X9(board) || IS_FAMILY_HORUS(board) || IS_FAMILY_T16(board) || IS_RADIOMASTER_BOXER(board))
-      return 3;
-    else if (IS_TARANIS_X9LITE(board))
-      return 1;
-    else if (IS_JUMPER_TLITE(board) || IS_BETAFPV_LR3PRO(board) || IS_IFLIGHT_COMMANDO8(board))
-      return 0;
-    else
-      return 2;
-  }
-  else {
-    return Boards::getCapability(board, Board::Pots);
-  }
-}
-
 struct YamlPotsWarnEnabled {
   unsigned int value;
 
   const Board::Type board = getCurrentBoard();
   const int maxradio = 8 * (int)(Boards::getCapability(board, Board::HasColorLcd) ? sizeof(uint16_t) : sizeof(uint8_t));
-  const int maxcpn = CPN_MAX_POTS + CPN_MAX_SLIDERS;
-  const int slidersStart = Boards::adcPotsBeforeSliders(board, modelSettingsVersion);
-  const int numpots = Boards::getCapability(board, Board::Pots);
-  const int offset = numpots - slidersStart;
+  const int maxcpn = Boards::getCapability(board, Board::FlexInputs);
 
   YamlPotsWarnEnabled() = default;
 
@@ -196,37 +247,17 @@ struct YamlPotsWarnEnabled {
   {
     value = 0;
 
-    int idx = 0;
-
-    for (int i = 0; i < maxcpn; i++) {
-      if (i < slidersStart)
-        idx = i;
-      else if (i >= numpots)
-        idx = i - offset;
-      else
-        continue;
-      if (idx >= 0 && idx < maxradio) {
-        value |= (*(potsWarnEnabled + i)) << idx;
-        //qDebug() << "i:" << i << "idx:" << idx << "value:" << *(potsWarnEnabled + i);
-      }
+    for (int i = 0; i < maxcpn && i < maxradio; i++) {
+      value |= (*(potsWarnEnabled + i)) << i;
     }
   }
 
   void toCpn(bool * potsWarnEnabled)
   {
-    memset(potsWarnEnabled, 0, sizeof(bool) * maxcpn);
+    memset(potsWarnEnabled, 0, sizeof(bool) * CPN_MAX_INPUTS);
 
-    int idx = 0;
-
-    for (int i = 0; i < maxradio; i++) {
-      if (i >= slidersStart)
-        idx = i + offset;
-      else
-        idx = i;
-      if (idx >= 0 && idx <= maxcpn) {
-        *(potsWarnEnabled + idx) = (bool)((value >> i) & 1);
-        //qDebug() << "i:" << i << "idx:" << idx << "value:" << (bool)((value >> i) & 1);
-      }
+    for (int i = 0; i < maxradio && i < maxcpn; i++) {
+      *(potsWarnEnabled + i) = (bool)((value >> i) & 1);
     }
   }
 };
@@ -234,54 +265,109 @@ struct YamlPotsWarnEnabled {
 struct YamlBeepANACenter {
   unsigned int value;
 
-  const Board::Type board = getCurrentBoard();
   const int maxradio = 8 * (int)sizeof(uint16_t);
-  const int numstickspots = CPN_MAX_STICKS + Boards::getCapability(board, Board::Pots);
-  const int maxcpn = numstickspots + getBoardCapability(board, Board::Sliders);
-  const int slidersStart = CPN_MAX_STICKS + Boards::adcPotsBeforeSliders(board, modelSettingsVersion);
-  const int offset = numstickspots - slidersStart;
+  const int maxcpn = 8 * (int)sizeof(unsigned int);
 
   YamlBeepANACenter() = default;
 
   YamlBeepANACenter(unsigned int beepANACenter)
   {
     value = 0;
-    int idx = 0;
 
-    for (int i = 0; i < maxcpn; i++) {
-      if (i < slidersStart)
-        idx = i;
-      else if (i >= numstickspots)
-        idx = i - offset;
-      else
-        continue;
-      if (idx >= 0 && idx < maxradio) {
-        Helpers::setBitmappedValue(value, Helpers::getBitmappedValue(beepANACenter, i), idx);
-        //qDebug() << "i:" << i << "bit:" << Helpers::getBitmappedValue(beepANACenter, i) << "idx:" << idx << "value:" << value;
-      }
+    for (int i = 0; i < maxcpn && i < maxradio; i++) {
+      Helpers::setBitmappedValue(value, Helpers::getBitmappedValue(beepANACenter, i), i);
     }
   }
 
   unsigned int toCpn()
   {
     unsigned int beepANACenter = 0;
-    int idx = 0;
 
-    for (int i = 0; i < maxradio; i++) {
-      if (i >= slidersStart)
-        idx = i + offset;
-      else
-        idx = i;
-      if (idx >= 0 && idx < maxcpn) {
-        Helpers::setBitmappedValue(beepANACenter, Helpers::getBitmappedValue(value, i), idx);
-        //qDebug() << "i:" << i << "bit:" << Helpers::getBitmappedValue(value, i) << "idx:" << idx << "beepANACenter:" << beepANACenter;
-      }
+    for (int i = 0; i < maxradio && i < maxcpn; i++) {
+      Helpers::setBitmappedValue(beepANACenter, Helpers::getBitmappedValue(value, i), i);
     }
 
     return beepANACenter;
   }
 };
 
+//  modeldata: uint64_t switchWarningStates
+//  Yaml switchWarning:
+//           SA:
+//              pos: mid
+//           SB:
+//              pos: up
+//           FL1:
+//              pos: down
+struct YamlSwitchWarning {
+
+  static constexpr size_t MASK_LEN = 2;
+  static constexpr size_t MASK = (1 << MASK_LEN) - 1;
+
+  YamlSwitchWarning() = default;
+
+  YamlSwitchWarning(YAML::Node& node, uint64_t cpn_value)
+  {
+    uint64_t states = cpn_value;
+
+    for (int i = 0; i < Boards::getCapability(getCurrentBoard(), Board::Switches); i++) {
+      if (states & MASK) {
+        std::string posn;
+
+        switch(states & MASK) {
+        case 1:
+          posn = "up";
+          break;
+        case 2:
+          posn = "mid";
+          break;
+        case 3:
+          posn = "down";
+          break;
+        }
+
+        node[Boards::getSwitchTag(i).toStdString()]["pos"] = posn;
+      }
+
+      states >>= MASK_LEN;
+    }
+  }
+
+  uint64_t toCpn(const YAML::Node &warn)
+  {
+    uint64_t states = 0;
+
+    if (warn.IsMap()) {
+      for (const auto& sw : warn) {
+        std::string tag;
+        sw.first >> tag;
+        int index = Boards::getSwitchIndex(tag.c_str(), Board::LVT_NAME);
+
+        if (index < 0)
+          continue;
+
+        std::string posn;
+        if (warn[tag]["pos"])
+          warn[tag]["pos"] >> posn;
+
+        int value = 0;
+
+        if (posn == "up")
+          value = 1;
+        else if (posn == "mid")
+          value = 2;
+        else if (posn == "down")
+          value = 3;
+
+        states |= ((uint64_t)value << (index * MASK_LEN));
+      }
+    }
+
+    return states;
+  }
+};
+
+//  Depreciated - only used for decoding refer YamlSwitchWarning for replacement
 //  modeldata: uint64_t switchWarningStates
 //  Yaml switchWarningState: AuBuEuFuG-IuJu
 struct YamlSwitchWarningState {
@@ -290,32 +376,30 @@ struct YamlSwitchWarningState {
   static constexpr size_t MASK = (1 << MASK_LEN) - 1;
 
   std::string src_str;
-  unsigned int enabled;
 
   YamlSwitchWarningState() = default;
 
-  YamlSwitchWarningState(uint64_t cpn_value, unsigned int switchWarningEnable)
-    : enabled(~switchWarningEnable)
+  YamlSwitchWarningState(uint64_t cpn_value)
   {
     uint64_t states = cpn_value;
 
     std::stringstream ss;
     for (int i = 0; i < Boards::getCapability(getCurrentBoard(), Board::Switches); i++) {
       //TODO: exclude 2-pos toggle from switch warnings
-      if (enabled & (1 << i)) {
-        std::string tag = getCurrentFirmware()->getSwitchesTag(i);
+      if (states & MASK) {
+        std::string tag = Boards::getSwitchTag(i).toStdString();
         const char *sw = tag.data();
 
         if (tag.size() >= 2 && sw[0] == 'S') {
           ss << sw[1];
           switch(states & MASK) {
-          case 0:
+          case 1:
             ss << 'u';
             break;
-          case 1:
+          case 2:
             ss << '-';
             break;
-          case 2:
+          case 3:
             ss << 'd';
             break;
           }
@@ -330,7 +414,6 @@ struct YamlSwitchWarningState {
   uint64_t toCpn()
   {
     uint64_t states = 0;
-    enabled = 0;
 
     std::stringstream ss(src_str);
     while (!ss.eof()) {
@@ -341,7 +424,7 @@ struct YamlSwitchWarningState {
       }
 
       std::string sw = std::string("S") + (char)c;
-      int index = getCurrentFirmware()->getSwitchesIndex(sw.c_str());
+      int index = Boards::getSwitchIndex(sw.c_str(), Board::LVT_NAME);
       if (index < 0) {
         ss.ignore();
         continue;
@@ -352,20 +435,19 @@ struct YamlSwitchWarningState {
       int value = 0;
       switch(s) {
       case 'u':
-        value = 0;
-        break;
-      case '-':
         value = 1;
         break;
-      case 'd':
+      case '-':
         value = 2;
+        break;
+      case 'd':
+        value = 3;
         break;
       default:
         continue;
       }
 
       states |= ((uint64_t)value << (index * MASK_LEN));
-      enabled |= (1 << index);
     }
 
     return states;
@@ -483,6 +565,7 @@ struct convert<LimitData> {
     node["symetrical"] = (int)rhs.symetrical;
     node["name"] = rhs.name;
     node["curve"] = rhs.curve.value;
+    // rhs.curve.type is not encoded
     return node;
   }
 
@@ -502,6 +585,7 @@ struct convert<LimitData> {
     node["symetrical"] >> rhs.symetrical;
     node["name"] >> rhs.name;
     node["curve"] >> rhs.curve.value;
+    rhs.curve.type = CurveReference::CURVE_REF_CUSTOM;  // this is not encoded but needed internally so force type
     return true;
   }
 };
@@ -544,13 +628,12 @@ Node EncodeFMData(const FlightModeData& rhs, int phaseIdx)
     Node node;
 
     size_t n_trims = Boards::getCapability(getCurrentBoard(), Board::NumTrims);
-    YamlTrim yt[n_trims];
 
     Node trims;
     for (size_t i=0; i<n_trims; i++) {
-      yt[i] = { rhs.trimMode[i], rhs.trimRef[i], rhs.trim[i] };
-      if (!yt[i].isEmpty()) {
-        trims[std::to_string(i)] = yt[i];
+      YamlTrim yt = { rhs.trimMode[i], rhs.trimRef[i], rhs.trim[i] };
+      if (!yt.isEmpty()) {
+        trims[std::to_string(i)] = yt;
       }
     }
     if (trims && trims.IsMap()) {
@@ -884,9 +967,50 @@ struct convert<FrSkyScreenData> {
   }
 };
 
+template <>
+struct convert<customSwitch> {
+  static Node encode(const customSwitch& rhs);
+  static bool decode(const Node& node, customSwitch& rhs);
+};
+
+Node convert<customSwitch>::encode(const customSwitch& rhs)
+{
+  Node node;
+  node["type"] = cfsSwitchConfig << rhs.type;
+  node["group"] = rhs.group;
+  node["start"] = cfsSwitchStart << rhs.start;
+  node["state"] = rhs.state;
+  node["name"] = rhs.name;
+  if (Boards::getCapability(getCurrentBoard(), Board::FunctionSwitchColors)) {
+    node["onColorLuaOverride"] = cfsSwitchLuaOverride << rhs.onColorLuaOverride;
+    node["offColorLuaOverride"] = cfsSwitchLuaOverride << rhs.offColorLuaOverride;
+    node["onColor"] = rhs.onColor;
+    node["offColor"] = rhs.offColor;
+  }
+  return node;
+}
+
+bool convert<customSwitch>::decode(const Node& node, customSwitch& rhs)
+{
+  if (!node.IsMap()) return false;
+
+  unsigned type;
+  node["type"] >> cfsSwitchConfig >> type;
+  rhs.type = (Board::SwitchType)type;
+  node["group"] >> rhs.group;
+  node["start"] >> cfsSwitchStart >> rhs.start;
+  node["state"] >> rhs.state;
+  node["name"] >> rhs.name;
+  node["onColorLuaOverride"] >> cfsSwitchLuaOverride >> rhs.onColorLuaOverride;
+  node["offColorLuaOverride"] >> cfsSwitchLuaOverride >> rhs.offColorLuaOverride;
+  node["onColor"] >> rhs.onColor;
+  node["offColor"] >> rhs.offColor;
+  return true;
+}
+
 Node convert<ModelData>::encode(const ModelData& rhs)
 {
-  version = SemanticVersion(VERSION);
+  modelSettingsVersion = SemanticVersion(VERSION);
 
   Node node;
   auto board = getCurrentBoard();
@@ -1004,15 +1128,18 @@ Node convert<ModelData>::encode(const ModelData& rhs)
   YamlThrTrace thrTrace(rhs.thrTraceSrc);
   node["thrTraceSrc"] = thrTrace.src;
 
-  YamlSwitchWarningState switchWarningState(rhs.switchWarningStates, rhs.switchWarningEnable);
-  node["switchWarningState"] = switchWarningState.src_str;
+  Node sw_warn;
+  YamlSwitchWarning switchWarning(sw_warn, rhs.switchWarningStates);
+  if (sw_warn && sw_warn.IsMap()) {
+    node["switchWarning"] = sw_warn;
+  }
 
   node["thrTrimSw"] = rhs.thrTrimSwitch;
   node["potsWarnMode"] = potsWarningModeLut << rhs.potsWarningMode;
-  node["jitterFilter"] = globalOnOffFilterLut << rhs.jitterFilter;
-
   YamlPotsWarnEnabled potsWarnEnabled(&rhs.potsWarnEnabled[0]);
   node["potsWarnEnabled"] = potsWarnEnabled.value;
+
+  node["jitterFilter"] = globalOnOffFilterLut << rhs.jitterFilter;
 
   for (int i = 0; i < CPN_MAX_POTS + CPN_MAX_SLIDERS; i++) {
     if (rhs.potsWarnPosition[i] != 0)
@@ -1111,22 +1238,25 @@ Node convert<ModelData>::encode(const ModelData& rhs)
     if (topbarData && topbarData.IsMap()) {
       node["topbarData"] = topbarData;
     }
+    for (int i = 0; i < MAX_TOPBAR_ZONES; i += 1)
+      if (rhs.topbarWidgetWidth[i] > 0)
+        node["topbarWidgetWidth"][std::to_string(i)]["val"] = (int)rhs.topbarWidgetWidth[i];
     node["view"] = rhs.view;
   }
 
   node["modelRegistrationID"] = rhs.registrationId;
   node["hatsMode"] = hatsModeLut << rhs.hatsMode;
 
-  if (Boards::getCapability(board, Board::FunctionSwitches)) {
-    node["functionSwitchConfig"] = rhs.functionSwitchConfig;
-    node["functionSwitchGroup"] = rhs.functionSwitchGroup;
-    node["functionSwitchStartConfig"] = rhs.functionSwitchStartConfig;
-    node["functionSwitchLogicalState"] = rhs.functionSwitchLogicalState;
+  int funcSwCnt = Boards::getCapability(board, Board::FunctionSwitches);
+  if (funcSwCnt) {
+    for (int i = 0; i < funcSwCnt; i += 1) {
+      int sw = Boards::getSwitchIndexForCFS(i);
+      std::string tag = Boards::getSwitchYamlName(sw, BoardJson::YLT_CONFIG).toStdString();
+      node["customSwitches"][tag] = rhs.customSwitches[i];
+    }
 
-    for (int i = 0; i < CPN_MAX_FUNCTION_SWITCHES; i++) {
-      if (strlen(rhs.functionSwitchNames[i]) > 0) {
-        node["switchNames"][std::to_string(i)]["val"] = rhs.functionSwitchNames[i];
-      }
+    for (int i = 1; i < 4; i += 1) {
+      node["cfsGroupOn"][std::to_string(i)]["v"] = rhs.cfsGroupOn[i];
     }
   }
 
@@ -1162,6 +1292,8 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
 {
   if (!node.IsMap()) return false;
 
+  Board::Type board = getCurrentBoard();
+
   unsigned int modelIds[CPN_MAX_MODULES];
   memset(modelIds, 0, sizeof(modelIds));
 
@@ -1180,9 +1312,6 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
 
   qDebug() << "Settings version:" << modelSettingsVersion.toString();
 
-  if (modelSettingsVersion > SemanticVersion(VERSION))
-    qDebug() << "Warning: version not supported by Companion!";
-
   if (node["header"]) {
     const auto& header = node["header"];
     if (header.IsMap()) {
@@ -1191,6 +1320,24 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
       header["labels"] >> rhs.labels;
       header["modelId"] >> modelIds;
     }
+  }
+
+  //  TODO display model filename in preference to model name as easier for user
+  if (modelSettingsVersion > SemanticVersion(VERSION)) {
+    QString prmpt = QCoreApplication::translate("YamlModelSettings", "Warning: '%1' has settings version %2 that is not supported by this version of Companion!\n\nModel settings may be corrupted if you continue.");
+    prmpt = prmpt.arg(rhs.name).arg(modelSettingsVersion.toString());
+    QMessageBox msgBox;
+    msgBox.setWindowTitle(QCoreApplication::translate("YamlModelSettings", "Read Model Settings"));
+    msgBox.setText(prmpt);
+    msgBox.setIcon(QMessageBox::Warning);
+    QPushButton *pbAccept = new QPushButton(CPN_STR_TTL_ACCEPT);
+    QPushButton *pbDecline = new QPushButton(CPN_STR_TTL_DECLINE);
+    msgBox.addButton(pbAccept, QMessageBox::AcceptRole);
+    msgBox.addButton(pbDecline, QMessageBox::RejectRole);
+    msgBox.setDefaultButton(pbDecline);
+    msgBox.exec();
+    if (msgBox.clickedButton() == pbDecline)
+      return false;
   }
 
   if (node["timers"]) {
@@ -1221,6 +1368,7 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
   node["limitData"] >> rhs.limitData;
 
   node["inputNames"] >> rhs.inputNames;
+
   node["expoData"] >> rhs.expoData;
 
   node["curves"] >> rhs.curves;
@@ -1240,10 +1388,17 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
   node["thrTraceSrc"] >> thrTrace.src;
   rhs.thrTraceSrc = thrTrace.toCpn();
 
-  YamlSwitchWarningState switchWarningState;
-  node["switchWarningState"] >> switchWarningState.src_str;
-  rhs.switchWarningStates = switchWarningState.toCpn();
-  rhs.switchWarningEnable = ~switchWarningState.enabled;
+  if (node["switchWarning"]) {
+    YamlSwitchWarning switchWarning;
+    rhs.switchWarningStates = switchWarning.toCpn(node["switchWarning"]);
+  }
+  else if (node["switchWarningState"]) {         // depreciated
+    YamlSwitchWarningState switchWarningState;
+    node["switchWarningState"] >> switchWarningState.src_str;
+    rhs.switchWarningStates = switchWarningState.toCpn();
+  } else {
+    rhs.switchWarningStates = 0;
+  }
 
   node["thrTrimSw"] >> rhs.thrTrimSwitch;
   node["potsWarnMode"] >> potsWarningModeLut >> rhs.potsWarningMode;
@@ -1351,16 +1506,92 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
 
   node["screenData"] >> rhs.customScreens.customScreenData;
   node["topbarData"] >> rhs.topBarData;
-
+  if (node["topbarWidgetWidth"]) {
+    for (int i = 0; i < MAX_TOPBAR_ZONES; i += 1) {
+      if (node["topbarWidgetWidth"][std::to_string(i)]) {
+        node["topbarWidgetWidth"][std::to_string(i)]["val"] >> rhs.topbarWidgetWidth[i];
+      }
+    }
+  }
   node["view"] >> rhs.view;
+
   node["modelRegistrationID"] >> rhs.registrationId;
   node["hatsMode"] >> hatsModeLut >> rhs.hatsMode;
 
-  node["functionSwitchConfig"] >> rhs.functionSwitchConfig;
-  node["functionSwitchGroup"] >> rhs.functionSwitchGroup;
-  node["functionSwitchStartConfig"] >> rhs.functionSwitchStartConfig;
-  node["functionSwitchLogicalState"] >> rhs.functionSwitchLogicalState;
-  node["switchNames"] >> rhs.functionSwitchNames;
+  rhs.setDefaultFunctionSwitches(Boards::getCapability(board, Board::FunctionSwitches));
+
+  if (node["functionSwitchConfig"]) {
+    uint16_t v;
+    node["functionSwitchConfig"] >> v;
+    for (int i = 0; i < 6; i += 1) {
+      rhs.customSwitches[i].type = (Board::SwitchType)(v & 3);
+      v >>= 2;
+    }
+  }
+  if (node["functionSwitchGroup"]) {
+    uint16_t v;
+    node["functionSwitchGroup"] >> v;
+    for (int i = 0; i < 6; i += 1) {
+      rhs.customSwitches[i].group = v & 3;
+      v >>= 2;
+    }
+    for (int i = 0; i < 4; i += 1) {
+      rhs.cfsGroupOn[i] = v & 1;
+      v >>= 1;
+    }
+  }
+  if (node["functionSwitchStartConfig"]) {
+    uint16_t v;
+    node["functionSwitchStartConfig"] >> v;
+    for (int i = 0; i < 6; i += 1) {
+      rhs.customSwitches[i].start = v & 3;
+      v >>= 2;
+    }
+  }
+  if (node["functionSwitchLogicalState"]) {
+    uint16_t v;
+    node["functionSwitchLogicalState"] >> v;
+    for (int i = 0; i < 6; i += 1) {
+      rhs.customSwitches[i].state = v & 1;
+      v >>= 1;
+    }
+  }
+  if (node["switchNames"]) {
+    for (int i = 0; i < 6; i += 1) {
+      if (node["switchNames"][std::to_string(i)]) {
+        node["switchNames"][std::to_string(i)]["val"] >> rhs.customSwitches[i].name;
+      }
+    }
+  }
+  if (node["functionSwitchLedONColor"]) {
+    for (int i = 0; i < 6; i += 1) {
+      if (node["functionSwitchLedONColor"][std::to_string(i)]) {
+        node["functionSwitchLedONColor"][std::to_string(i)] >> rhs.customSwitches[i].onColor;
+      }
+    }
+  }
+  if (node["functionSwitchLedOFFColor"]) {
+    for (int i = 0; i < 6; i += 1) {
+      if (node["functionSwitchLedOFFColor"][std::to_string(i)]) {
+        node["functionSwitchLedOFFColor"][std::to_string(i)] >> rhs.customSwitches[i].offColor;
+      }
+    }
+  }
+  int funcSwCnt = Boards::getCapability(board, Board::FunctionSwitches);
+  if (node["customSwitches"]) {
+    for (int i = 0; i < funcSwCnt; i += 1) {
+      int sw = Boards::getSwitchIndexForCFS(i);
+      std::string tag = Boards::getSwitchYamlName(sw, BoardJson::YLT_CONFIG).toStdString();
+      node["customSwitches"][tag] >> rhs.customSwitches[i];
+    }
+  }
+  if (node["cfsGroupOn"]) {
+    for (int i = 1; i < 4; i += 1) {
+      if (node["cfsGroupOn"][std::to_string(i)]) {
+        node["cfsGroupOn"][std::to_string(i)]["v"] >> rhs.cfsGroupOn[i];
+      }
+    }
+  }
 
   // Custom USB joytsick mapping
   node["usbJoystickExtMode"] >> rhs.usbJoystickExtMode;
@@ -1396,7 +1627,7 @@ bool convert<ModelData>::decode(const Node& node, ModelData& rhs)
   }
 
   // perform integrity checks and fix-ups
-
+  YamlValidateLabelsNames(rhs, board);
   rhs.sortMixes();  // critical for Companion and radio that mix lines are in sequence
 
   return true;

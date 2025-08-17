@@ -23,6 +23,7 @@
 #include "stm32_gpio_driver.h"
 #include "stm32_timer.h"
 #include "stm32_dma.h"
+#include "stm32_gpio.h"
 
 #include "definitions.h"
 
@@ -63,7 +64,11 @@ static void init_dma_arr_mode(const stm32_pulse_timer_t* tim)
     dmaInit.PeriphOrM2MSrcDataSize = LL_DMA_PDATAALIGN_HALFWORD;
   }
 
+#if defined(STM32H7)
+  dmaInit.PeriphRequest = tim->DMA_Channel;
+#else
   dmaInit.Channel = tim->DMA_Channel;
+#endif
   dmaInit.Priority = LL_DMA_PRIORITY_VERYHIGH;
 
   stm32_dma_enable_clock(tim->DMAx);
@@ -73,23 +78,16 @@ static void init_dma_arr_mode(const stm32_pulse_timer_t* tim)
 int stm32_pulse_init(const stm32_pulse_timer_t* tim, uint32_t freq)
 {
   // check if timer is free first (clock disabled)
-  if (stm32_timer_is_clock_enabled(tim->TIMx)) return -1;
+  // if (stm32_timer_is_clock_enabled(tim->TIMx)) return -1;
 
   // .. and GPIO pin is not used
-  uint32_t pin_mode = LL_GPIO_GetPinMode(tim->GPIOx, tim->GPIO_Pin);
-  if (pin_mode != LL_GPIO_MODE_INPUT) return -1;
+  // if(gpio_get_mode(tim->GPIO) != GPIO_IN) return -1;
 
   if (tim->DMA_TC_CallbackPtr) {
     memset(tim->DMA_TC_CallbackPtr, 0, sizeof(stm32_pulse_dma_tc_cb_t));
   }
   
-  LL_GPIO_InitTypeDef pinInit;
-  LL_GPIO_StructInit(&pinInit);
-  pinInit.Pin = tim->GPIO_Pin;
-  pinInit.Mode = LL_GPIO_MODE_ALTERNATE;
-  pinInit.Alternate = tim->GPIO_Alternate;
-  stm32_gpio_enable_clock(tim->GPIOx);
-  LL_GPIO_Init(tim->GPIOx, &pinInit);
+  gpio_init_af(tim->GPIO, tim->GPIO_Alternate, GPIO_PIN_SPEED_MEDIUM);
 
   LL_TIM_InitTypeDef timInit;
   LL_TIM_StructInit(&timInit);
@@ -140,13 +138,7 @@ void stm32_pulse_deinit(const stm32_pulse_timer_t* tim)
   LL_TIM_DeInit(tim->TIMx);
   stm32_timer_disable_clock(tim->TIMx);
 
-  // Reconfigure pin as input
-  LL_GPIO_InitTypeDef pinInit;
-  LL_GPIO_StructInit(&pinInit);
-
-  pinInit.Pin = tim->GPIO_Pin;
-  pinInit.Mode = LL_GPIO_MODE_INPUT;
-  LL_GPIO_Init(tim->GPIOx, &pinInit);
+  gpio_init(tim->GPIO, GPIO_IN, GPIO_PIN_SPEED_MEDIUM);
 }
 
 static inline bool _is_complementary_channel(uint32_t channel)

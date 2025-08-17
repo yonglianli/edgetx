@@ -1,5 +1,5 @@
 /*
- * Copyright (C) EdgeTx
+* Copyright (C) EdgeTx
  *
  * Based on code named
  *   opentx - https://github.com/opentx/opentx
@@ -21,9 +21,15 @@
 
 #pragma once
 
-void rgbLedStart();
-void rgbLedStop();
-void rgbSetLedColor(unsigned char, unsigned char, unsigned char, unsigned char);
-void rgbLedColorApply();
+#include <stdint.h>
 
-// void boardInitRGBLed();
+void rgbLedInit();
+void rgbLedStop();
+
+void rgbSetLedColor(uint8_t led, uint8_t r, uint8_t g, uint8_t b);
+uint32_t rgbGetLedColor(uint8_t led);
+
+void rgbLedClearAll();
+
+bool rgbGetState(uint8_t led);
+void rgbLedColorApply();

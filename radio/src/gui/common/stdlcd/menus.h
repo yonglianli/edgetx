@@ -19,10 +19,9 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _COMMON_MENUS_H_
-#define _COMMON_MENUS_H_
+#pragma once
 
-#include "opentx_types.h"
+#include "edgetx_types.h"
 
 typedef int8_t horzpos_t;
 typedef uint16_t vertpos_t;
@@ -49,6 +48,7 @@ extern vertpos_t menuVerticalOffset;
 extern uint8_t menuCalibrationState;
 extern MenuHandlerFunc menuHandlers[5];
 extern uint8_t menuVerticalPositions[4];
+extern uint8_t menuVerticalOffsets[4];
 extern uint8_t menuLevel;
 extern event_t menuEvent;
 
@@ -61,5 +61,3 @@ inline MenuHandlerFunc lastPopMenu()
 {
   return menuHandlers[menuLevel + 1];
 }
-
-#endif // _COMMON_MENUS_H_

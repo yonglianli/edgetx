@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "MultiProtoDefs.h"
 
 bool setBindProtocolSelection()
@@ -28,7 +28,7 @@ bool setBindProtocolSelection()
   int16_t yPos = calibratedAnalogs[ADC_MAIN_LV];
 
   // Center: D8
-  if (abs(xPos < 50 && abs(yPos) < 50)) {
+  if (abs(xPos) < 50 && abs(yPos) < 50) {
     g_model.moduleData[INTERNAL_MODULE].multi.rfProtocol = MODULE_SUBTYPE_MULTI_FRSKY;
     g_model.moduleData[INTERNAL_MODULE].subType = MULTI_FRSKYD_SUBTYPE_D8;
     storageDirty(EE_MODEL);

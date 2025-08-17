@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _RADIOKNOBWIDGET_H_
-#define _RADIOKNOBWIDGET_H_
+#pragma once
 
 #include "radiowidget.h"
 #include "boards.h"
@@ -38,23 +38,23 @@ class RadioKnobWidget : public RadioWidget
 
   public:
 
-    explicit RadioKnobWidget(Board::PotType type = Board::POT_WITH_DETENT, QWidget * parent = Q_NULLPTR, Qt::WindowFlags f = Qt::WindowFlags()) :
+    explicit RadioKnobWidget(Board::FlexType type = Board::FLEX_POT_CENTER, QWidget * parent = Q_NULLPTR, Qt::WindowFlags f = Qt::WindowFlags()) :
       RadioWidget(parent, f)
     {
       init(type);
     }
 
-    explicit RadioKnobWidget(Board::PotType type, const QString & labelText, int value = 0, QWidget * parent = Q_NULLPTR, Qt::WindowFlags f = Qt::WindowFlags()) :
+    explicit RadioKnobWidget(Board::FlexType type, const QString & labelText, int value = 0, QWidget * parent = Q_NULLPTR, Qt::WindowFlags f = Qt::WindowFlags()) :
       RadioWidget(labelText, value, parent, f)
     {
       init(type);
     }
 
-    void init(Board::PotType potType)
+    void init(Board::FlexType potType)
     {
       m_type = RADIO_WIDGET_KNOB;
 
-      m_stepSize = (potType == Board::POT_MULTIPOS_SWITCH) ? 2048 / 5 : 1;
+      m_stepSize = (potType == Board::FLEX_MULTIPOS) ? 2048 / 5 : 1;
 
       m_toolTip = tr("<p>Value (input): <b>%1</b></p>");
       if (m_stepSize == 1)
@@ -88,7 +88,7 @@ class RadioKnobWidget : public RadioWidget
       }
 
       m_dial->setValue(m_value);
-      
+
       connect(m_dial, &QDial::valueChanged, this, &RadioKnobWidget::setValueFromDial);
       connect(this, &RadioWidget::valueChanged, m_dial, &QDial::setValue);
 
@@ -157,6 +157,3 @@ class RadioKnobWidget : public RadioWidget
     QString m_toolTip;
 
 };
-
-
-#endif // _RADIOKNOBWIDGET_H_

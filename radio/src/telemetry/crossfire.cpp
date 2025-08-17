@@ -20,10 +20,17 @@
  */
 
 #include "crossfire.h"
+#include "edgetx.h"
+#include "math.h"
 
-#include "opentx.h"
+#include "trainer.h"
 
+// clang-format off
 #define CS(id,subId,name,unit,precision) {id,subId,unit,precision,name}
+
+#define CROSSFIRE_CH_BITS           11
+#define CROSSFIRE_CH_MASK           ((1 << CROSSFIRE_CH_BITS) - 1)
+#define CROSSFIRE_CH_CENTER         0x3E0
 
 const CrossfireSensor crossfireSensors[] = {
   CS(LINK_ID,        0, STR_SENSOR_RX_RSSI1,      UNIT_DB,                0),
@@ -57,8 +64,16 @@ const CrossfireSensor crossfireSensors[] = {
   CS(FLIGHT_MODE_ID, 0, STR_SENSOR_FLIGHT_MODE,   UNIT_TEXT,              0),
   CS(CF_VARIO_ID,    0, STR_SENSOR_VSPD,          UNIT_METERS_PER_SECOND, 2),
   CS(BARO_ALT_ID,    0, STR_SENSOR_ALT,           UNIT_METERS,            2),
-  CS(0,              0, "UNKNOWN",          UNIT_RAW,               0),
+  CS(AIRSPEED_ID,    0, STR_SENSOR_ASPD,          UNIT_KMH,               1),
+  CS(CF_RPM_ID,      0, STR_SENSOR_RPM,           UNIT_RPMS,              0),
+  CS(TEMP_ID,        0, STR_SENSOR_TEMP,          UNIT_DEGREE,            1),
+  CS(CELLS_ID,       0, STR_SENSOR_CELLS,         UNIT_CELLS,             2),
+  CS(VOLT_ARRAY_ID,  0, STR_SENSOR_VOLT,          UNIT_VOLTS,             2),
+  CS(0,              0, "UNKNOWN",                UNIT_RAW,               0),
 };
+// clang-format on
+
+CrossfireModuleStatus crossfireModuleStatus[2] = {0};
 
 const CrossfireSensor & getCrossfireSensor(uint8_t id, uint8_t subId)
 {
@@ -80,6 +95,16 @@ const CrossfireSensor & getCrossfireSensor(uint8_t id, uint8_t subId)
     return crossfireSensors[FLIGHT_MODE_INDEX];
   else if (id == BARO_ALT_ID)
     return crossfireSensors[BARO_ALTITUDE_INDEX];
+  else if (id == AIRSPEED_ID)
+    return crossfireSensors[AIRSPEED_INDEX];
+  else if (id == CF_RPM_ID)
+    return crossfireSensors[CF_RPM_INDEX];
+  else if (id == TEMP_ID)
+    return crossfireSensors[TEMP_INDEX];
+  else if (id == CELLS_ID)
+    return crossfireSensors[CELLS_INDEX];
+  else if (id == VOLT_ARRAY_ID)
+    return crossfireSensors[VOLT_ARRAY_INDEX];
   else
     return crossfireSensors[UNKNOWN_INDEX];
 }
@@ -156,12 +181,85 @@ void processCrossfireTelemetryFrame(uint8_t module, uint8_t* rxBuffer,
         }
         processCrossfireTelemetryValue(BARO_ALTITUDE_INDEX, value);
       }
+
       // Length of TBS BARO_ALT has 4 payload bytes with just 2 bytes of altitude
-      // but support including VARIO if the declared payload length is 6 bytes or more
+      // but support including TBS VARIO if the declared payload length is 5 bytes
+      if (crsfPayloadLen == 5 &&
+          getCrossfireTelemetryValue<1>(5, value, rxBuffer)) {
+       constexpr int Kl = 100;       // linearity constant;
+       constexpr float Kr = .026;    // range constant;
+
+       int8_t sign = value < 0 ? -1 : 1;
+       value =((expf(value * sign * Kr) - 1) * Kl) * sign;
+       processCrossfireTelemetryValue(VERTICAL_SPEED_INDEX, value);
+      }
+
+      // Length of TBS BARO_ALT has 4 payload bytes with just 2 bytes of altitude
+      // but support including ELRS VARIO if the declared payload length is 6 bytes or more
       if (crsfPayloadLen > 5 &&
           getCrossfireTelemetryValue<2>(5, value, rxBuffer))
         processCrossfireTelemetryValue(VERTICAL_SPEED_INDEX, value);
       break;
+
+    case AIRSPEED_ID:
+      if (getCrossfireTelemetryValue<2>(3, value, rxBuffer)) {
+        // Airspeed in 0.1 * km/h (hectometers/h)
+        // Converstion to KMH is done through PREC1
+        processCrossfireTelemetryValue(AIRSPEED_INDEX, value);
+      }
+      break;
+
+    case CF_RPM_ID:
+    {
+      getCrossfireTelemetryValue<1>(3, value, rxBuffer);
+      uint8_t sensorID = value;
+      for(uint8_t i = 0; i * 3 < (crsfPayloadLen - 4);  i++) {
+        getCrossfireTelemetryValue<3>(4 + i * 3, value, rxBuffer);
+        const CrossfireSensor & sensor = crossfireSensors[CF_RPM_INDEX];
+        setTelemetryValue(PROTOCOL_TELEMETRY_CROSSFIRE, sensor.id + (sensorID << 8), 0, i,
+                          value, sensor.unit, sensor.precision);
+      }
+      break;
+    }
+
+    case TEMP_ID:
+    {
+      getCrossfireTelemetryValue<1>(3, value, rxBuffer);
+      uint8_t sensorID = value;
+      for(uint8_t i = 0; i * 2 < (crsfPayloadLen - 4);  i++) {
+        getCrossfireTelemetryValue<2>(4 + i * 2, value, rxBuffer);
+        const CrossfireSensor & sensor = crossfireSensors[TEMP_INDEX];
+        setTelemetryValue(PROTOCOL_TELEMETRY_CROSSFIRE, sensor.id + (sensorID << 8), 0, i,
+                          value, sensor.unit, sensor.precision);
+      }
+      break;
+    }
+
+    case CELLS_ID:
+    {
+      getCrossfireTelemetryValue<1>(3, value, rxBuffer);
+      uint8_t sensorID = value;
+
+      if (sensorID < 128) {
+        // Treating frame as Cells sensor
+        // We can handle only up to 8 cells
+        for(uint8_t i = 0; i * 2 < min(16, crsfPayloadLen - 4);  i++) {
+          getCrossfireTelemetryValue<2>(4 + i * 2, value, rxBuffer);
+          const CrossfireSensor & sensor = crossfireSensors[CELLS_INDEX];
+          setTelemetryValue(PROTOCOL_TELEMETRY_CROSSFIRE, sensor.id + (sensorID << 8), 0, 0,
+                          i << 16 | value / 10, sensor.unit, sensor.precision);
+        }
+      } else {
+        // Treating frame as Voltage sensor array
+        for(uint8_t i = 0; i * 2 < (crsfPayloadLen - 4);  i++) {
+          value = (rxBuffer[4 + i * 2] << 8) + rxBuffer[4 + i * 2 + 1];
+          const CrossfireSensor & sensor = crossfireSensors[VOLT_ARRAY_INDEX];
+          setTelemetryValue(PROTOCOL_TELEMETRY_CROSSFIRE, sensor.id + (sensorID << 8), 0, i,
+                                    value / 10, sensor.unit, sensor.precision);
+        }
+      }
+      break;
+    }
 
     case LINK_ID:
       for (unsigned int i=0; i<=TX_SNR_INDEX; i++) {
@@ -188,6 +286,27 @@ void processCrossfireTelemetryFrame(uint8_t module, uint8_t* rxBuffer,
             }
           }
         }
+      }
+      break;
+
+    case CHANNELS_ID:
+      if (g_model.trainerData.mode == TRAINER_MODE_CRSF) {
+        uint8_t inputbitsavailable = 0;
+        uint32_t inputbits = 0;
+        uint8_t  byteIdx = 3;
+        int16_t *pulses = trainerInput;
+
+        for (int i = 0; i < min(CROSSFIRE_CHANNELS_COUNT, MAX_TRAINER_CHANNELS); i++) {
+          while (inputbitsavailable < CROSSFIRE_CH_BITS) {
+            inputbits |= (uint32_t)(rxBuffer[byteIdx++]) << inputbitsavailable;
+            inputbitsavailable += 8;
+          }
+          *pulses++ = ((int32_t)(inputbits & CROSSFIRE_CH_MASK) - CROSSFIRE_CH_CENTER) * 5 / 8;
+          inputbitsavailable -= CROSSFIRE_CH_BITS;
+          inputbits >>= CROSSFIRE_CH_BITS;
+        }
+
+        trainerResetTimer();
       }
       break;
 
@@ -258,18 +377,37 @@ void processCrossfireTelemetryFrame(uint8_t module, uint8_t* rxBuffer,
 
 #if defined(LUA)
     default:
-      if (luaInputTelemetryFifo && luaInputTelemetryFifo->hasSpace(rxBufferCount - 2)) {
-        for (uint8_t i = 1; i < rxBufferCount - 1; i++) {
-          // destination address and CRC are skipped
-          luaInputTelemetryFifo->push(rxBuffer[i]);
+      if (id == DEVICE_INFO_ID && rxBuffer[4]== MODULE_ADDRESS) {
+        uint8_t nameSize = rxBuffer[1] - 18;
+        strncpy((char *)&crossfireModuleStatus[module].name, (const char *)&rxBuffer[5], CRSF_NAME_MAXSIZE);
+        crossfireModuleStatus[module].name[CRSF_NAME_MAXSIZE -1] = 0; // For some reason, GH din't like strlcpy
+        if (strncmp((const char *) &rxBuffer[5 + nameSize], "ELRS", 4) == 0)
+          crossfireModuleStatus[module].isELRS = true;
+        crossfireModuleStatus[module].major = rxBuffer[14 + nameSize];
+        crossfireModuleStatus[module].minor = rxBuffer[15 + nameSize];
+        crossfireModuleStatus[module].revision = rxBuffer[16 + nameSize];
+
+        ModuleData *md = &g_model.moduleData[module];
+
+        if(!CRSF_ELRS_MIN_VER(module, 4, 0) &&
+           (md->crsf.crsfArmingMode != ARMING_MODE_CH5 || md->crsf.crsfArmingMode != SWSRC_NONE)) {
+          md->crsf.crsfArmingMode = ARMING_MODE_CH5;
+          md->crsf.crsfArmingTrigger = SWSRC_NONE;
+
+          storageDirty(EE_MODEL);
         }
+
+        crossfireModuleStatus[module].queryCompleted = true;
       }
+
+      // destination address and CRC are skipped
+      pushTelemetryDataToQueues(rxBuffer + 1, rxBufferCount - 2);
       break;
 #endif
   }
 }
 
-void crossfireSetDefault(int index, uint8_t id, uint8_t subId)
+void crossfireSetDefault(int index, uint16_t id, uint8_t subId)
 {
   TelemetrySensor & telemetrySensor = g_model.telemetrySensors[index];
 

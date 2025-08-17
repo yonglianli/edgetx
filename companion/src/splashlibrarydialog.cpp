@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -91,7 +92,7 @@ void SplashLibraryDialog::getFileList()
     QDir myRes(":/images/library");
     QStringList tmp = myRes.entryList();
     for (int i = 0; i < tmp.size(); i++) {
-      QFileInfo fileInfo = tmp.at(i);
+      QFileInfo fileInfo(tmp.at(i));
       imageList.append(":/images/library/" + fileInfo.fileName());
     }
   }
@@ -106,7 +107,7 @@ void SplashLibraryDialog::getFileList()
       myDir.setNameFilters(supportedImageFormats);
       QStringList tmp = myDir.entryList();
       for (int i = 0; i < tmp.size(); i++) {
-        QFileInfo fileInfo = tmp.at(i);
+        QFileInfo fileInfo(tmp.at(i));
         QString filename = libraryPath + "/" + fileInfo.fileName();
         QImage image(filename);
         if (!image.isNull()) {

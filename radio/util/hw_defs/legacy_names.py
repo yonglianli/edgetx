@@ -2,7 +2,7 @@
 
 LEGACY_NAMES = [
     {
-        "targets": {"x10", "x10express", "t16", "tx16s", "t18"},
+        "targets": {"x10", "x10express", "t16", "tx16s", "t18", "f16", "v16"},
         "inputs": {
             "LH": {
                 "yaml": "Rud",
@@ -86,6 +86,45 @@ LEGACY_NAMES = [
                 "label": "EXT4",
                 "short_label": "E4",
                 "description": "Ext 4"
+            }
+        }
+    },
+    {
+        "targets": {"t15"},
+        "inputs": {
+            "LH": {
+                "yaml": "Rud",
+                "lua": "rud",
+                "description": "Rudder"
+            },
+            "LV": {
+                "yaml": "Ele",
+                "lua": "ele",
+                "description": "Elevator"
+            },
+            "RV": {
+                "yaml": "Thr",
+                "lua": "thr",
+                "description": "Throttle"
+            },
+            "RH": {
+                "yaml": "Ail",
+                "lua": "ail",
+                "description": "Aileron"
+            },
+            "P1": {
+                "yaml": "S1",
+                "lua": "s1",
+                "label": "S1",
+                "short_label": "1",
+                "description": "Potentiometer S1"
+            },
+            "P2": {
+                "yaml": "S2",
+                "lua": "s2",
+                "label": "S2",
+                "short_label": "2",
+                "description": "Potentiometer S2"
             }
         }
     },
@@ -214,34 +253,48 @@ LEGACY_NAMES = [
                 "short_label": "F2",
                 "description": "Potentiometer 2"
             },
+            "P3": {
+                "yaml": "POT3",
+                "lua": "s3",
+                "label": "F3",
+                "short_label": "F3",
+                "description": "Potentiometer 3"
+            },
+            "P4": {
+                "yaml": "POT4",
+                "lua": "s4",
+                "label": "F4",
+                "short_label": "F4",
+                "description": "Potentiometer 4"
+            },
             "SL1": {
                 "yaml": "SLIDER1",
-                "lua": "ls",
-                "label": "LS",
-                "short_label": "L",
-                "description": "Left slider"
-            },
-            "SL2": {
-                "yaml": "SLIDER2",
-                "lua": "rs",
-                "label": "RS",
-                "short_label": "R",
-                "description": "Right slider"
-            },
-            "SL3": {
-                "yaml": "SLIDER3",
                 "lua": "lcs",
                 "label": "S1",
                 "short_label": "S1",
                 "description": "Left center slider"
             },
-            "SL4": {
-                "yaml": "SLIDER4",
+            "SL2": {
+                "yaml": "SLIDER2",
                 "lua": "rcs",
                 "label": "S2",
                 "short_label": "S2",
                 "description": "Right center slider"
-            }
+            },
+            "SL3": {
+                "yaml": "SLIDER3",
+                "lua": "ls",
+                "label": "LS",
+                "short_label": "L",
+                "description": "Left slider"
+            },
+            "SL4": {
+                "yaml": "SLIDER4",
+                "lua": "rs",
+                "label": "RS",
+                "short_label": "R",
+                "description": "Right slider"
+            },
         }
     },
     {
@@ -282,11 +335,64 @@ LEGACY_NAMES = [
                 "description": "Potentiometer 2"
             },
             "P3": {
-                "yaml": "POT3",
-                "lua": "s3",
-                "label": "S3",
+                "yaml": "6POS",
+                "lua": "6P",
+                "label": "6P",
                 "short_label": "3",
-                "description": "6 pos"
+                "description": "Multipos Switch"
+            }
+        }
+    },
+    {
+        "targets": {"gx12"},
+        "inputs": {
+            "LH": {
+                "yaml": "Rud",
+                "lua": "rud",
+                "description": "Rudder"
+            },
+            "LV": {
+                "yaml": "Ele",
+                "lua": "ele",
+                "description": "Elevator"
+            },
+            "RV": {
+                "yaml": "Thr",
+                "lua": "thr",
+                "description": "Throttle"
+            },
+            "RH": {
+                "yaml": "Ail",
+                "lua": "ail",
+                "description": "Aileron"
+            },
+            "P1": {
+                "yaml": "POT1",
+                "lua": "p1",
+                "label": "P1",
+                "short_label": "1",
+                "description": "Potentiometer 1"
+            },
+            "P2": {
+                "yaml": "POT2",
+                "lua": "p2",
+                "label": "P2",
+                "short_label": "2",
+                "description": "Potentiometer 2"
+            },
+            "SL1": {
+                "yaml": "SLIDER1",
+                "lua": "s1",
+                "label": "S1",
+                "short_label": "S1",
+                "description": "Left slider"
+            },
+            "SL2": {
+                "yaml": "SLIDER2",
+                "lua": "s2",
+                "label": "S2",
+                "short_label": "S2",
+                "description": "Right slider"
             }
         }
     },
@@ -334,19 +440,27 @@ LEGACY_NAMES = [
         }
     },
     {
-        "targets": {"t14"},
+        "targets": {"t14", "t12max", "tpros"},
         "inputs": {
             "LH": {
-                "yaml": "Rud"
+                "yaml": "Rud",
+                "lua": "rud",
+                "description": "Rudder"
             },
             "LV": {
-                "yaml": "Ele"
+                "yaml": "Ele",
+                "lua": "ele",
+                "description": "Elevator"
             },
             "RV": {
-                "yaml": "Thr"
+                "yaml": "Thr",
+                "lua": "thr",
+                "description": "Throttle"
             },
             "RH": {
-                "yaml": "Ail"
+                "yaml": "Ail",
+                "lua": "ail",
+                "description": "Aileron"
             },
             "P1": {
                 "yaml": "POT1",
@@ -370,7 +484,7 @@ LEGACY_NAMES = [
             "lr3pro",
             "nv14", "el18",
             "t8", "t12",
-            "tlite", "tlitef4", "tpro", "tprov2",
+            "tlite", "tlitef4", "tpro", "tprov2", "tpros", "bumblebee",
             "tx12", "tx12mk2",
             "x7", "x7access",
             "xlite", "xlites",
@@ -414,9 +528,7 @@ LEGACY_NAMES = [
         }
     },
     {
-        "targets": {
-            "pl18"
-        },
+        "targets": {"pl18", "pl18u"},
         "inputs": {
             "LH": {
                 "yaml": "Rud",
@@ -566,7 +678,84 @@ LEGACY_NAMES = [
         }
     },
     {
-        "targets": {"t20"},
+        "targets": {
+            "nb4p"
+        },
+        "inputs": {
+            "ST": {
+                "yaml": "ST",
+                "lua": "ste",
+                "description": "Steering"
+            },
+            "TH": {
+                "yaml": "TH",
+                "lua": "thr",
+                "description": "Throttle"
+            },
+            "P1": {
+                "yaml": "POT1",
+                "lua": "s1",
+                "label": "VR1L",
+                "short_label": "1",
+                "description": "Potentiometer 1"
+            },
+            "P2": {
+                "yaml": "POT2",
+                "lua": "s2",
+                "label": "VR1R",
+                "short_label": "2",
+                "description": "Potentiometer 2"
+            }
+        }
+    },
+    {
+        "targets": {"v12", "v14"},
+        "inputs": {
+            "LH": {
+                "yaml": "Rud",
+                "lua": "rud",
+                "description": "Rudder"
+            },
+            "LV": {
+                "yaml": "Ele",
+                "lua": "ele",
+                "description": "Elevator"
+            },
+            "RV": {
+                "yaml": "Thr",
+                "lua": "thr",
+                "description": "Throttle"
+            },
+            "RH": {
+                "yaml": "Ail",
+                "lua": "ail",
+                "description": "Aileron"
+            },
+            "P1": {
+                "yaml": "POT1",
+                "lua": "s1",
+                "label": "S1",
+                "short_label": "1",
+                "description": "Potentiometer 1"
+            },
+            "P2": {
+                "yaml": "POT2",
+                "lua": "s2",
+                "label": "S2",
+                "short_label": "2",
+                "description": "Potentiometer 2"
+            },
+            "P3": {
+                "yaml": "POT3",
+                "lua": "s3",
+                "label": "S3",
+                "short_label": "3",
+                "description": "6 pos"
+            }
+        }
+    },
+    {
+        "targets": {"t20","t20v2"},
         "inputs": {
             "LH": {
                 "yaml": "Rud",
@@ -752,10 +941,70 @@ LEGACY_NAMES = [
                 "lua": "rs",
                 "label": "RS",
                 "short_label": "R",
-                "description": "Right slider"
-            }
-        }
-    }
+                "description": "Right slider",
+            },
+        },
+    },
+    {
+        "targets": {"st16"},
+        "inputs": {
+            "LH": {"yaml": "Rud", "lua": "rud", "description": "Rudder"},
+            "LV": {"yaml": "Ele", "lua": "ele", "description": "Elevator"},
+            "RV": {"yaml": "Thr", "lua": "thr", "description": "Throttle"},
+            "RH": {"yaml": "Ail", "lua": "ail", "description": "Aileron"},
+            "P1": {
+                "yaml": "S1",
+                "lua": "s1",
+                "label": "S1",
+                "short_label": "1",
+                "description": "Potentiometer 1",
+            },
+            "P2": {
+                "yaml": "S2",
+                "lua": "s2",
+                "label": "S2",
+                "short_label": "2",
+                "description": "Potentiometer 2",
+            },
+            "SL1": {
+                "yaml": "LS",
+                "lua": "ls",
+                "label": "LS",
+                "short_label": "L",
+                "description": "Left slider",
+            },
+            "SL2": {
+                "yaml": "RS",
+                "lua": "rs",
+                "label": "RS",
+                "short_label": "R",
+                "description": "Right slider",
+            },
+        },
+    },
+    {
+        "targets": {"h747", "h7rs"},
+        "inputs": {
+            "LH": {"yaml": "Rud", "lua": "rud", "description": "Rudder"},
+            "LV": {"yaml": "Ele", "lua": "ele", "description": "Elevator"},
+            "RV": {"yaml": "Thr", "lua": "thr", "description": "Throttle"},
+            "RH": {"yaml": "Ail", "lua": "ail", "description": "Aileron"},
+            "P1": {
+                "yaml": "POT1",
+                "lua": "s1",
+                "label": "S1",
+                "short_label": "1",
+                "description": "Potentiometer 1",
+            },
+            "P2": {
+                "yaml": "POT2",
+                "lua": "s2",
+                "label": "S2",
+                "short_label": "2",
+                "description": "Potentiometer 2",
+            },
+        },
+    },
 ]
 
 

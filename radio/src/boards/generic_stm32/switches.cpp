@@ -23,8 +23,9 @@
 #include "stm32_switch_driver.h"
 #include "stm32_gpio_driver.h"
 
+#include "drivers/pca95xx.h"
+
 #include "definitions.h"
-#include "opentx_constants.h"
 #include "myeeprom.h"
 
 // generated switch structs
@@ -32,31 +33,38 @@
 
 #include <stdlib.h>
 
-void boardInitSwitches()
+__weak void boardInitSwitches()
 {
   _init_switches();
 }
 
-SwitchHwPos boardSwitchGetPosition(uint8_t cat, uint8_t idx)
+__weak SwitchHwPos boardSwitchGetPosition(uint8_t idx)
 {
-  return stm32_switch_get_position(&_switch_offsets[cat][idx]);
+  const stm32_switch_t* sw = &_switch_defs[idx];
+  return stm32_switch_get_position(sw);
 }
 
-const char* boardSwitchGetName(uint8_t cat, uint8_t idx)
+__weak const char* boardSwitchGetName(uint8_t idx)
 {
-  return _switch_offsets[cat][idx].name;
+  return _switch_defs[idx].name;
 }
 
-SwitchHwType boardSwitchGetType(uint8_t cat, uint8_t idx)
+__weak SwitchHwType boardSwitchGetType(uint8_t idx)
 {
-  return _switch_offsets[cat][idx].type;
+  return _switch_defs[idx].type;
 }
+
+const stm32_switch_t* boardGetSwitchDef(uint8_t idx) { return &_switch_defs[idx]; }
 
 uint8_t boardGetMaxSwitches() { return n_switches; }
-uint8_t boardGetMaxFctSwitches() { return n_fct_switches; }
+#if defined(FUNCTION_SWITCHES)
+bool boardIsCustomSwitch(uint8_t idx) { return _switch_defs[idx].isCustomSwitch; }
+uint8_t boardGetCustomSwitchIdx(uint8_t idx) { return _switch_defs[idx].customSwitchIdx; }
+#endif
 
-swconfig_t boardSwitchGetDefaultConfig() { return _switch_default_config; }
+SwitchConfig boardSwitchGetDefaultConfig(uint8_t idx) { return _switch_defs[idx].defaultType; }
 
+#if !defined(COLORLCD)
 switch_display_pos_t switchGetDisplayPosition(uint8_t idx)
 {
   // TODO: find a solution for FLEX switches so they can be displayed on main view
@@ -64,3 +72,4 @@ switch_display_pos_t switchGetDisplayPosition(uint8_t idx)
 
   return _switch_display[idx];
 }
+#endif

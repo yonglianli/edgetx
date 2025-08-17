@@ -20,74 +20,37 @@
  */
 
 #include "strhelpers.h"
+
 #include <string.h>
 
 #if !defined(BOOT)
-#include "opentx.h"
-
-#include "hal/switch_driver.h"
-#include "hal/adc_driver.h"
-#include "switches.h"
 #include "analogs.h"
+#include "hal/adc_driver.h"
+#include "hal/switch_driver.h"
+#include "edgetx.h"
+#include "switches.h"
 
 static char _static_str_buffer[32];
 static const char s_charTab[] = "_-.,";
 
-char hex2zchar(uint8_t hex) { return (hex >= 10 ? hex - 9 : 27 + hex); }
+const char* sanitizeForFilename(const char* name, int len)
+{
+  strAppend(_static_str_buffer, name, len);
+
+  char *s = _static_str_buffer;
+  // Remove invalid characters in filename
+  for (int i = 0; s[i]; i += 1)
+    if (s[i] == '"' || s[i] == ':' || s[i] == '\\' ||
+        s[i] == '/' || s[i] == '<' || s[i] == '>' ||
+        s[i] == '?' || s[i] == '*')
+      s[i] = '_';
+  
+  return _static_str_buffer;
+}
 
 char hex2char(uint8_t hex) { return (hex >= 10 ? hex - 10 + 'A' : hex + '0'); }
 
-char zchar2char(int8_t idx)
-{
-  if (idx == 0) return ' ';
-  if (idx < 0) {
-    if (idx > -27) return 'a' - idx - 1;
-    idx = -idx;
-  }
-  if (idx < 27) return 'A' + idx - 1;
-  if (idx < 37) return '0' + idx - 27;
-  if (idx <= 40) return *(s_charTab + idx - 37);
-#if LEN_SPECIAL_CHARS > 0
-  if (idx <= (LEN_STD_CHARS + LEN_SPECIAL_CHARS)) return 'z' + 5 + idx - 40;
-#endif
-  return ' ';
-}
-
 char char2lower(char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
-
-int8_t char2zchar(char c)
-{
-  if (c == '_') return 37;
-#if LEN_SPECIAL_CHARS > 0
-  if ((int8_t)c < 0 && c + 128 <= LEN_SPECIAL_CHARS) return 41 + (c + 128);
-#endif
-  if (c >= 'a') return 'a' - c - 1;
-  if (c >= 'A') return c - 'A' + 1;
-  if (c >= '0') return c - '0' + 27;
-  if (c == '-') return 38;
-  if (c == '.') return 39;
-  if (c == ',') return 40;
-  return 0;
-}
-
-void str2zchar(char *dest, const char *src, int size)
-{
-  memset(dest, 0, size);
-  for (int c = 0; c < size && src[c]; c++) {
-    dest[c] = char2zchar(src[c]);
-  }
-}
-
-int zchar2str(char *dest, const char *src, int size)
-{
-  for (int c = 0; c < size; c++) {
-    dest[c] = zchar2char(src[c]);
-  }
-  do {
-    dest[size--] = '\0';
-  } while (size >= 0 && dest[size] == ' ');
-  return size + 1;
-}
 
 int strnlen(const char *src, int max_size)
 {
@@ -173,7 +136,8 @@ char *strAppendStringWithIndex(char *dest, const char *s, int idx)
 #define SECONDSPERDAY (24 * SECONDSPERHOUR)
 #define SECONDSPERYEAR (365 * SECONDSPERDAY)
 
-char *getFormattedTimerString(char *dest, int32_t tme, TimerOptions timerOptions)
+char *getFormattedTimerString(char *dest, int32_t tme,
+                              TimerOptions timerOptions)
 {
   char *s = dest;
   div_t qr;
@@ -184,7 +148,7 @@ char *getFormattedTimerString(char *dest, int32_t tme, TimerOptions timerOptions
   uint8_t numDigitGroupRequired = (timerOptions.options >> 2) & 0x7;
   const bool hmFormat = timerOptions.options & SHOW_TIMER_HM_FORMAT;
 
-  if(!numDigitGroupRequired) numDigitGroupRequired = 3;
+  if (!numDigitGroupRequired) numDigitGroupRequired = 3;
 
   if (tme < 0) {
     tme = -tme;
@@ -201,10 +165,10 @@ char *getFormattedTimerString(char *dest, int32_t tme, TimerOptions timerOptions
     val = qr.rem;
     digit_group++;
   }
-   if (digit_group == numDigitGroupRequired) {
+  if (digit_group == numDigitGroupRequired) {
     *s = 0;
     return dest;
-  } 
+  }
   // days
   qr = div((int)val, SECONDSPERDAY);
   if (qr.quot != 0 || digit_group != 0) {
@@ -231,7 +195,7 @@ char *getFormattedTimerString(char *dest, int32_t tme, TimerOptions timerOptions
       *s = 0;
       return dest;
     }
-    if(numDigitGroupRequired < 3 || hmFormat)
+    if (numDigitGroupRequired < 3 || hmFormat)
       *s++ = bLowerCase ? 'h' : 'H';
     else
       *s++ = ':';
@@ -250,11 +214,11 @@ char *getFormattedTimerString(char *dest, int32_t tme, TimerOptions timerOptions
     *s = 0;
     return dest;
   }
-  if(!showTime && hmFormat)
+  if (!showTime && hmFormat)
     *s++ = bLowerCase ? 'm' : 'M';
   else
     *s++ = ':';
-  
+
   // seconds
   *s++ = '0' + (qr.rem / 10);
   *s++ = '0' + (qr.rem % 10);
@@ -364,7 +328,7 @@ char *getCurveString(char *dest, int idx)
 
   char *s = dest;
   if (idx < 0) {
-    *s++ = '!';
+    *s++ = '-';
     idx = -idx;
   }
 
@@ -388,7 +352,7 @@ char *getGVarString(char *dest, int idx)
     s[0] = '\0';
     return s;
   }
-  
+
   if (g_model.gvars[idx].name[0])
     strAppend(s, g_model.gvars[idx].name, LEN_GVAR_NAME);
   else
@@ -398,16 +362,41 @@ char *getGVarString(char *dest, int idx)
 }
 
 #if defined(LIBOPENUI)
-char *getValueOrGVarString(char *dest, size_t len, gvar_t value, gvar_t vmin, gvar_t vmax,
-                           LcdFlags flags, const char* suffix, gvar_t offset)
+char *getValueOrGVarString(char *dest, size_t len, gvar_t value,
+                           LcdFlags flags, const char *suffix,
+                           gvar_t offset, bool usePPMUnit)
 {
-  if (GV_IS_GV_VALUE(value, vmin, vmax)) {
-    int index = GV_INDEX_CALC_DELTA(value, GV_GET_GV1_VALUE(vmin, vmax));
+  if (GV_IS_GV_VALUE(value)) {
+    int index = GV_INDEX_FROM_VALUE(value);
     return getGVarString(dest, index);
   }
 
   value += offset;
+  if (usePPMUnit && g_eeGeneral.ppmunit == PPM_US)
+    value = value * 128 / 25;
   formatNumberAsString(dest, len, value, flags, 0, nullptr, suffix);
+  return dest;
+}
+
+char *getValueOrSrcVarString(char *dest, size_t len, gvar_t value,
+                           LcdFlags flags, const char *suffix,
+                           gvar_t offset, bool usePPMUnit)
+{
+  SourceNumVal v;
+  v.rawValue = value;
+  if (v.isSource) {
+    if (abs(v.value) >= MIXSRC_FIRST_GVAR && v.value <= MIXSRC_LAST_GVAR) {
+      getGVarString(dest, (v.value < 0) ? v.value + MIXSRC_FIRST_GVAR - 1 : v.value - MIXSRC_FIRST_GVAR);
+    } else {
+      const char* s = getSourceString(v.value);
+      strncpy(dest, s, len);
+    }
+  } else {
+    v.value += offset;
+    if (usePPMUnit && g_eeGeneral.ppmunit == PPM_US)
+      v.value = v.value * 128 / 25;
+    formatNumberAsString(dest, len, v.value, flags, 0, nullptr, suffix);
+  }
   return dest;
 }
 #endif
@@ -431,25 +420,32 @@ char *getFlightModeString(char *dest, int8_t idx)
   return dest;
 }
 
-char* getSwitchName(char *dest, uint8_t idx)
+char* getCustomSwitchesGroupName(char *dest, uint8_t idx)
 {
-  if (switchHasCustomName(idx)) {
-    dest = strAppend(dest, switchGetCustomName(idx), LEN_SWITCH_NAME);
+  dest = strAppendStringWithIndex(dest, "GR", idx + 1);
+
+  return dest;
+}
+
+char* getSwitchName(char *dest, uint8_t idx, bool defaultOnly)
+{
+  if (!defaultOnly && g_model.switchHasCustomName(idx)) {
+    dest = strAppend(dest, g_model.getSwitchCustomName(idx), LEN_SWITCH_NAME);
   } else {
-    dest = strAppend(dest, switchGetName(idx), LEN_SWITCH_NAME);
+    dest = strAppend(dest, switchGetDefaultName(idx), LEN_SWITCH_NAME);
   }
 
   return dest;
 }
 
-static const char* _switch_state_str[] {
-  " ",
-  STR_CHAR_UP,
-  "-",
-  STR_CHAR_DOWN,
+static const char *_switch_state_str[]{
+    " ",
+    STR_CHAR_UP,
+    "-",
+    STR_CHAR_DOWN,
 };
 
-const char* getSwitchWarnSymbol(uint8_t pos)
+const char *getSwitchWarnSymbol(uint8_t pos)
 {
   // 0: NONE
   // 1: UP
@@ -459,7 +455,7 @@ const char* getSwitchWarnSymbol(uint8_t pos)
   return _switch_state_str[pos];
 }
 
-const char* getSwitchPositionSymbol(uint8_t pos)
+const char *getSwitchPositionSymbol(uint8_t pos)
 {
   // 0: UP
   // 1: MIDDLE
@@ -468,7 +464,7 @@ const char* getSwitchPositionSymbol(uint8_t pos)
   return _switch_state_str[pos + 1];
 }
 
-char *getSwitchPositionName(char *dest, swsrc_t idx)
+char *getSwitchPositionName(char *dest, swsrc_t idx, bool defaultOnly)
 {
   if (idx == SWSRC_NONE) {
     return strcpy(dest, STR_EMPTY);
@@ -484,16 +480,14 @@ char *getSwitchPositionName(char *dest, swsrc_t idx)
 
   if (idx <= SWSRC_LAST_SWITCH) {
     div_t swinfo = switchInfo(idx);
-    s = getSwitchName(s, swinfo.quot);
+    s = getSwitchName(s, swinfo.quot, defaultOnly);
     s = strAppend(s, getSwitchPositionSymbol(swinfo.rem), 2);
     *s = '\0';
-  }
-  else if (idx <= SWSRC_LAST_MULTIPOS_SWITCH) {
+  } else if (idx <= SWSRC_LAST_MULTIPOS_SWITCH) {
     div_t swinfo =
         div(int(idx - SWSRC_FIRST_MULTIPOS_SWITCH), XPOTS_MULTIPOS_COUNT);
     s = strAppendStringWithIndex(s, getPotLabel(swinfo.quot), swinfo.rem + 1);
-  }
-  else if (idx <= SWSRC_LAST_TRIM) {
+  } else if (idx <= SWSRC_LAST_TRIM) {
     idx -= SWSRC_FIRST_TRIM;
     // TODO: 't' or STR_CHAR_TRIM
     s = strAppend(s, getTrimLabel(idx / 2));
@@ -528,9 +522,41 @@ char *getSwitchPositionName(char *dest, swsrc_t idx)
   return dest;
 }
 
-const char* getAnalogLabel(uint8_t type, uint8_t idx)
+bool switchCanHaveCustomName(swsrc_t idx)
 {
-  if (analogHasCustomLabel(type, idx))
+  return (idx >= SWSRC_FIRST_SWITCH && idx <= SWSRC_LAST_SWITCH);
+}
+
+int getSwitchIndex(const char* name, bool all)
+{
+  bool negate = false;
+
+  if (name[0] == '!') {
+    name++;
+    negate = true;
+  }
+
+  for (swsrc_t idx = SWSRC_NONE; idx < SWSRC_COUNT; idx++) {
+    if (all || isSwitchAvailable(idx, ModelCustomFunctionsContext)) {
+      char* s;
+      if (switchCanHaveCustomName(idx)) {
+        // Check default name
+        s = getSwitchPositionName(idx, true);
+        if (!strcasecmp(s, name))
+          return negate ? -idx : idx;
+      }
+      s = getSwitchPositionName(idx);
+      if (!strcasecmp(s, name))
+        return negate ? -idx : idx;
+    }
+  }
+
+  return SWSRC_INVERT;  // Not found
+}
+
+const char *getAnalogLabel(uint8_t type, uint8_t idx, bool defaultOnly)
+{
+  if (!defaultOnly && analogHasCustomLabel(type, idx))
     return analogGetCustomLabel(type, idx);
 
   if (type == ADC_INPUT_MAIN) {
@@ -541,11 +567,11 @@ const char* getAnalogLabel(uint8_t type, uint8_t idx)
   if (type == ADC_INPUT_FLEX) {
     return adcGetInputLabel(type, idx);
   }
-  
+
   return analogGetCanonicalName(type, idx);
 }
 
-const char* getAnalogShortLabel(uint8_t idx)
+const char *getAnalogShortLabel(uint8_t idx)
 {
   auto max = adcGetMaxInputs(ADC_INPUT_MAIN);
   if (idx < max) {
@@ -573,15 +599,15 @@ const char* getAnalogShortLabel(uint8_t idx)
   return "";
 }
 
-const char* getMainControlLabel(uint8_t idx)
+const char *getMainControlLabel(uint8_t idx, bool defaultOnly)
 {
-  return getAnalogLabel(ADC_INPUT_MAIN, idx);
+  return getAnalogLabel(ADC_INPUT_MAIN, idx, defaultOnly);
 }
 
-const char* getTrimLabel(uint8_t idx)
+const char *getTrimLabel(uint8_t idx, bool defaultOnly)
 {
   if (idx < adcGetMaxInputs(ADC_INPUT_MAIN)) {
-    return getMainControlLabel(idx);
+    return getMainControlLabel(idx, defaultOnly);
   }
 
   // TODO: replace with string from HW def
@@ -590,7 +616,7 @@ const char* getTrimLabel(uint8_t idx)
   return _trim_buffer;
 }
 
-const char* getTrimSourceLabel(uint16_t src_raw, int8_t trim_src)
+const char *getTrimSourceLabel(uint16_t src_raw, int8_t trim_src)
 {
   if (trim_src < TRIM_ON) {
     return getTrimLabel(-trim_src - 1);
@@ -602,17 +628,25 @@ const char* getTrimSourceLabel(uint16_t src_raw, int8_t trim_src)
   }
 }
 
-const char* getPotLabel(uint8_t idx)
+const char *getPotLabel(uint8_t idx, bool defaultOnly)
 {
-  return getAnalogLabel(ADC_INPUT_FLEX, idx);
+  return getAnalogLabel(ADC_INPUT_FLEX, idx, defaultOnly);
 }
 
 // this should be declared in header, but it used so much foreign symbols that
 // we declare it in cpp-file and pre-instantiate it for the uses
 template <size_t L>
-char *getSourceString(char (&dest)[L], mixsrc_t idx)
+char *getSourceString(char (&destRef)[L], mixsrc_t idx, bool defaultOnly)
 {
   size_t dest_len = L;
+  char* dest = destRef;
+
+  if (idx < 0) {
+    idx = -idx;
+    dest[0] = '-';
+    dest += 1;
+    dest_len -= 1;
+  }
 
   if (idx == MIXSRC_NONE) {
     strncpy(dest, STR_EMPTY, dest_len - 1);
@@ -620,53 +654,55 @@ char *getSourceString(char (&dest)[L], mixsrc_t idx)
     idx -= MIXSRC_FIRST_INPUT;
     static_assert(L > sizeof(STR_CHAR_INPUT) - 1, "dest string too small");
     dest_len -= sizeof(STR_CHAR_INPUT) - 1;
-    char* pos = strAppend(dest, STR_CHAR_INPUT, sizeof(STR_CHAR_INPUT) - 1);
-    if (g_model.inputNames[idx][0] != '\0' && (dest_len > sizeof(g_model.inputNames[idx]))) {
+    char *pos = strAppend(dest, STR_CHAR_INPUT, sizeof(STR_CHAR_INPUT) - 1);
+    if (!defaultOnly && g_model.inputNames[idx][0] != '\0' &&
+        (dest_len > sizeof(g_model.inputNames[idx]))) {
       memset(pos, 0, sizeof(g_model.inputNames[idx]) + 1);
-      size_t input_len = std::min(dest_len - 1, sizeof(g_model.inputNames[idx]));
+      size_t input_len =
+          std::min(dest_len - 1, sizeof(g_model.inputNames[idx]));
       strncpy(pos, g_model.inputNames[idx], input_len);
       pos[input_len] = '\0';
     } else {
       strAppendUnsigned(pos, idx + 1, 2);
     }
   }
-  
 #if defined(LUA_INPUTS)
   else if (idx <= MIXSRC_LAST_LUA) {
 #if defined(LUA_MODEL_SCRIPTS)
-    div_t qr = div(idx - MIXSRC_FIRST_LUA, MAX_SCRIPT_OUTPUTS);
+    div_t qr = div((uint16_t)(idx - MIXSRC_FIRST_LUA), MAX_SCRIPT_OUTPUTS);
     if (qr.quot < MAX_SCRIPTS &&
         qr.rem < scriptInputsOutputs[qr.quot].outputsCount) {
-
       static_assert(L > sizeof(STR_CHAR_LUA) - 1, "dest string too small");
       dest_len -= sizeof(STR_CHAR_LUA) - 1;
-      char* pos = strAppend(dest, STR_CHAR_LUA, sizeof(STR_CHAR_LUA) - 1);
+      char *pos = strAppend(dest, STR_CHAR_LUA, sizeof(STR_CHAR_LUA) - 1);
 
       if (g_model.scriptsData[qr.quot].name[0] != '\0') {
         // instance Name is not empty : dest = InstanceName/OutputName
-        snprintf(pos, dest_len, "%.*s/%.*s", (int)sizeof(g_model.scriptsData[qr.quot].name), g_model.scriptsData[qr.quot].name,
-                 (int)sizeof(scriptInputsOutputs[qr.quot].outputs[qr.rem].name), scriptInputsOutputs[qr.quot].outputs[qr.rem].name);
+        pos = strAppend(pos, g_model.scriptsData[qr.quot].name, LEN_SCRIPT_NAME);
       } else {
         // instance Name is empty : dest = n-ScriptFileName/OutputName
-        snprintf(pos, dest_len, "%d-%.*s/%.*s", qr.quot + 1,
-                 (int)sizeof(g_model.scriptsData[qr.quot].file), g_model.scriptsData[qr.quot].file,
-                 (int)sizeof(scriptInputsOutputs[qr.quot].outputs[qr.rem].name), scriptInputsOutputs[qr.quot].outputs[qr.rem].name);
+        pos = strAppendUnsigned(pos, qr.quot + 1);
+        pos = strAppend(pos, "-");
+        pos = strAppend(pos, g_model.scriptsData[qr.quot].file, LEN_SCRIPT_FILENAME);
       }
+      pos = strAppend(pos, "/");
+      dest_len = L - (pos - dest);
+      strAppend(pos, scriptInputsOutputs[qr.quot].outputs[qr.rem].name, dest_len);
     }
 #else
-    strncpy(dest, "N/A", L-1);
+    strncpy(dest, "N/A", dest_len-1);
 #endif
   }
 #endif
   else if (idx <= MIXSRC_LAST_POT) {
-    char* pos = dest;
+    char *pos = dest;
     idx -= MIXSRC_FIRST_STICK;
 
-    const char* name;
+    const char *name;
     if (idx < MAX_STICKS) {
       pos = strAppend(pos, STR_CHAR_STICK, sizeof(STR_CHAR_STICK) - 1);
       dest_len -= sizeof(STR_CHAR_STICK) - 1;
-      name = getMainControlLabel(idx);
+      name = getMainControlLabel(idx, defaultOnly);
     } else {
       idx -= MAX_STICKS;
       if (IS_SLIDER(idx)) {
@@ -677,7 +713,7 @@ char *getSourceString(char (&dest)[L], mixsrc_t idx)
         dest_len -= sizeof(STR_CHAR_POT) - 1;
       }
       // TODO: AXIS / SWITCH ???
-      name = getPotLabel(idx);
+      name = getPotLabel(idx, defaultOnly);
     }
     strncpy(pos, name, dest_len - 1);
     pos[dest_len - 1] = '\0';
@@ -696,39 +732,43 @@ char *getSourceString(char (&dest)[L], mixsrc_t idx)
 #endif
   else if (idx == MIXSRC_MIN) {
     strncpy(dest, STR_MENU_MIN, dest_len - 1);
-  }
-  else if (idx == MIXSRC_MAX) {
+  } else if (idx == MIXSRC_MAX) {
     strncpy(dest, STR_MENU_MAX, dest_len - 1);
   } else if (idx <= MIXSRC_LAST_HELI) {
     idx -= MIXSRC_FIRST_HELI;
     getStringAtIndex(dest, STR_CYC_VSRCRAW, idx);
   } else if (idx <= MIXSRC_LAST_TRIM) {
     idx -= MIXSRC_FIRST_TRIM;
-    char* pos = strAppend(dest, STR_CHAR_TRIM, sizeof(STR_CHAR_TRIM) - 1);
-    strAppend(pos, getTrimLabel(idx));
+    char *pos = strAppend(dest, STR_CHAR_TRIM, sizeof(STR_CHAR_TRIM) - 1);
+    strAppend(pos, getTrimLabel(idx, defaultOnly));
   } else if (idx <= MIXSRC_LAST_SWITCH) {
     idx -= MIXSRC_FIRST_SWITCH;
-    char* pos = strAppend(dest, STR_CHAR_SWITCH, sizeof(STR_CHAR_SWITCH) - 1);
-    getSwitchName(pos, idx);
+    char *pos = strAppend(dest, STR_CHAR_SWITCH, sizeof(STR_CHAR_SWITCH) - 1);
+    getSwitchName(pos, idx, defaultOnly);
+#if defined(FUNCTION_SWITCHES)
+  } else if (idx <= MIXSRC_LAST_CUSTOMSWITCH_GROUP) {
+    idx -= MIXSRC_FIRST_CUSTOMSWITCH_GROUP;
+    char *pos = strAppend(dest, STR_CHAR_SWITCH, sizeof(STR_CHAR_SWITCH) - 1);
+    getCustomSwitchesGroupName(pos, idx);
+#endif
   } else if (idx <= MIXSRC_LAST_LOGICAL_SWITCH) {
-    // TODO: unnecessary, use the direct way instead
     idx -= MIXSRC_FIRST_LOGICAL_SWITCH;
-    getSwitchPositionName(dest, idx + SWSRC_FIRST_LOGICAL_SWITCH);
+    getSwitchPositionName(dest, idx + SWSRC_FIRST_LOGICAL_SWITCH, defaultOnly);
   } else if (idx <= MIXSRC_LAST_TRAINER) {
     idx -= MIXSRC_FIRST_TRAINER;
     strAppendStringWithIndex(dest, STR_PPM_TRAINER, idx + 1);
   } else if (idx <= MIXSRC_LAST_CH) {
     auto ch = idx - MIXSRC_FIRST_CH;
-    if (g_model.limitData[ch].name[0] != '\0') {
-      copyToTerminated(dest, g_model.limitData[ch].name);
+    if (!defaultOnly && g_model.limitData[ch].name[0] != '\0') {
+      strAppend(dest, g_model.limitData[ch].name, LEN_CHANNEL_NAME);
     } else {
       strAppendStringWithIndex(dest, STR_CH, ch + 1);
     }
   } else if (idx <= MIXSRC_LAST_GVAR) {
     idx -= MIXSRC_FIRST_GVAR;
 #if defined(LIBOPENUI)
-    char* s = strAppendStringWithIndex(dest, STR_GV, idx + 1);
-    if (g_model.gvars[idx].name[0]) {
+    char *s = strAppendStringWithIndex(dest, STR_GV, idx + 1);
+    if (!defaultOnly && g_model.gvars[idx].name[0]) {
       s = strAppend(s, ":");
       getGVarString(s, idx);
     }
@@ -737,52 +777,95 @@ char *getSourceString(char (&dest)[L], mixsrc_t idx)
 #endif
   } else if (idx < MIXSRC_FIRST_TIMER) {
     // Built-in sources: TX Voltage, Time, GPS (+ reserved)
-    const char* src_str;
-    switch(idx) {
-    case MIXSRC_TX_VOLTAGE:
-      src_str = STR_SRC_BATT;
-      break;
-    case MIXSRC_TX_TIME:
-      src_str = STR_SRC_TIME;
-      break;
-    case MIXSRC_TX_GPS:
-      src_str = STR_SRC_GPS;
-      break;
-    default:
-      src_str = "";
-      break;
-    }    
+    const char *src_str;
+    switch (idx) {
+      case MIXSRC_TX_VOLTAGE:
+        src_str = STR_SRC_BATT;
+        break;
+      case MIXSRC_TX_TIME:
+        src_str = STR_SRC_TIME;
+        break;
+      case MIXSRC_TX_GPS:
+        src_str = STR_SRC_GPS;
+        break;
+      default:
+        src_str = "";
+        break;
+    }
     strncpy(dest, src_str, dest_len - 1);
   } else if (idx <= MIXSRC_LAST_TIMER) {
     idx -= MIXSRC_FIRST_TIMER;
-    if (g_model.timers[idx].name[0] != '\0') {
-      copyToTerminated(dest, g_model.timers[idx].name);
+    if (!defaultOnly && g_model.timers[idx].name[0] != '\0') {
+      strAppend(dest, g_model.timers[idx].name, LEN_TIMER_NAME);
     } else {
       strAppendStringWithIndex(dest, STR_SRC_TIMER, idx + 1);
     }
   } else {
     idx -= MIXSRC_FIRST_TELEM;
-    div_t qr = div(idx, 3);
+    div_t qr = div((uint16_t)idx, 3);
     char* pos = strAppend(dest, STR_CHAR_TELEMETRY, 2);
     pos = strAppend(pos, g_model.telemetrySensors[qr.quot].label,
                     sizeof(g_model.telemetrySensors[qr.quot].label));
     if (qr.rem) *pos = (qr.rem == 2 ? '+' : '-');
     *++pos = '\0';
   }
-  dest[L - 1] = '\0'; // assert the termination
-  return dest; 
+  destRef[L - 1] = '\0'; // assert the termination
+  return destRef; 
+}
+
+bool sourceCanHaveCustomName(mixsrc_t idx)
+{
+  return (idx >= MIXSRC_FIRST_INPUT && idx <= MIXSRC_LAST_INPUT) ||
+         (idx >= MIXSRC_FIRST_STICK && idx <= MIXSRC_LAST_STICK) ||
+         (idx >= MIXSRC_FIRST_POT && idx <= MIXSRC_LAST_POT) ||
+         (idx >= MIXSRC_FIRST_TRIM && idx <= MIXSRC_LAST_TRIM) ||
+         (idx >= MIXSRC_FIRST_SWITCH && idx <= MIXSRC_LAST_SWITCH) ||
+         (idx >= MIXSRC_FIRST_CH && idx <= MIXSRC_LAST_CH) ||
+         (idx >= MIXSRC_FIRST_GVAR && idx <= MIXSRC_LAST_GVAR) ||
+         (idx >= MIXSRC_FIRST_TIMER && idx <= MIXSRC_LAST_TIMER);
+}
+
+bool matchSource(const char* name, mixsrc_t idx, bool defaultOnly)
+{
+  char *s = getSourceString(idx, defaultOnly);
+  if (strcasecmp(s, name) == 0)
+    return true;
+  // Check for names starting with CHAR_xxx symbol strings
+  if (s[0] == '\302' && (strcasecmp(s + 2, name) == 0))
+    return true;
+  return false;
+}
+
+int getSourceIndex(const char* name, bool all)
+{
+  for (mixsrc_t idx = MIXSRC_NONE; idx <= MIXSRC_LAST_TELEM; idx++) {
+    if (all || isSourceAvailable(idx)) {
+      if (sourceCanHaveCustomName(idx)) {
+        // Check default name
+        if (matchSource(name, idx, true))
+          return idx;
+      }
+      if (matchSource(name, idx, false))
+        return idx;
+    }
+  }
+
+  return -1;
 }
 
 // pre-instantiate for use from external
 // all other instantiations are done from this file
-template char *getSourceString<16>(char (&dest)[16], mixsrc_t idx);
+template char *getSourceString<16>(char (&dest)[16], mixsrc_t idx, bool defaultOnly);
 
-char *getSourceString(mixsrc_t idx)
+char *getSourceString(mixsrc_t idx, bool defaultOnly)
 {
-  return getSourceString(_static_str_buffer, idx);
+  return getSourceString(_static_str_buffer, idx, defaultOnly);
 }
 
-char *getCurveString(int idx) { return getCurveString(_static_str_buffer, idx); }
+char *getCurveString(int idx)
+{
+  return getCurveString(_static_str_buffer, idx);
+}
 
 char *getTimerString(int32_t tme, TimerOptions timerOptions)
 {
@@ -794,9 +877,9 @@ char *getTimerString(char *dest, int32_t tme, TimerOptions timerOptions)
   return getFormattedTimerString(dest, tme, timerOptions);
 }
 
-char *getSwitchPositionName(swsrc_t idx)
+char *getSwitchPositionName(swsrc_t idx, bool defaultOnly)
 {
-  return getSwitchPositionName(_static_str_buffer, idx);
+  return getSwitchPositionName(_static_str_buffer, idx, defaultOnly);
 }
 
 char *getGVarString(int idx) { return getGVarString(_static_str_buffer, idx); }
@@ -811,7 +894,7 @@ char *getValueWithUnit(char *dest, size_t len, int32_t val, uint8_t unit,
     formatNumberAsString(dest, len, val, flags);
   } else {
     formatNumberAsString(dest, len, val, flags, 0, nullptr,
-                                       STR_VTELEMUNIT[unit]);
+                         STR_VTELEMUNIT[unit]);
   }
 
   return dest;
@@ -821,9 +904,11 @@ template <size_t L>
 char *getSensorCustomValueString(char (&dest)[L], uint8_t sensor, int32_t val,
                                  LcdFlags flags)
 {
-  if (sensor >= MAX_TELEMETRY_SENSORS) { return dest; }
+  if (sensor >= MAX_TELEMETRY_SENSORS) {
+    return dest;
+  }
 
-  TelemetrySensor & telemetrySensor = g_model.telemetrySensors[sensor];
+  TelemetrySensor &telemetrySensor = g_model.telemetrySensors[sensor];
 
   size_t len = L - 1;
   // TODO: display TEXT sensors?
@@ -842,15 +927,15 @@ char *getSensorCustomValueString(char (&dest)[L], uint8_t sensor, int32_t val,
 }
 
 template <size_t L>
-char *getSourceCustomValueString(char (&dest)[L], source_t source, int32_t val,
+char *getSourceCustomValueString(char (&dest)[L], mixsrc_t source, int32_t val,
                                  LcdFlags flags)
 {
+  source = abs(source);
   size_t len = L - 1;
   if (source >= MIXSRC_FIRST_TELEM) {
     source = (source - MIXSRC_FIRST_TELEM) / 3;
     return getSensorCustomValueString(dest, source, val, flags);
-  }
-  else if (source >= MIXSRC_FIRST_TIMER || source == MIXSRC_TX_TIME) {
+  } else if (source >= MIXSRC_FIRST_TIMER || source == MIXSRC_TX_TIME) {
     if (L < LEN_TIMER_STRING) return dest;
     if (source == MIXSRC_TX_TIME) flags |= TIMEHOUR;
 
@@ -859,14 +944,18 @@ char *getSourceCustomValueString(char (&dest)[L], source_t source, int32_t val,
     if ((flags & TIMEHOUR) != 0) timerOptions.options = SHOW_TIME;
 
     return getTimerString(dest, val, timerOptions);
-  }
-  else if (source == MIXSRC_TX_VOLTAGE) {
+  } else if (source == MIXSRC_TX_VOLTAGE) {
     formatNumberAsString(dest, len, val, flags | PREC1);
     return dest;
   }
 #if defined(INTERNAL_GPS)
   else if (source == MIXSRC_TX_GPS) {
-    strAppend(dest, "N/A", len);
+    if (gpsData.fix) {
+      std::string s = getGPSSensorValue(gpsData.longitude, gpsData.latitude, flags);
+      strAppend(dest, s.c_str(), L);
+    } else {
+      formatNumberAsString(dest, L, gpsData.numSat, flags, len, "sats: ");
+    }
     return dest;
   }
 #endif
@@ -890,8 +979,7 @@ char *getSourceCustomValueString(char (&dest)[L], source_t source, int32_t val,
   else if (source < MIXSRC_FIRST_CH) {
     val = calcRESXto100(val);
     formatNumberAsString(dest, len, val, flags);
-  }
-  else if (source <= MIXSRC_LAST_CH) {
+  } else if (source <= MIXSRC_LAST_CH) {
     if (g_eeGeneral.ppmunit == PPM_PERCENT_PREC1) {
       val = calcRESXto1000(val);
       formatNumberAsString(dest, len, val, flags | PREC1);
@@ -899,18 +987,20 @@ char *getSourceCustomValueString(char (&dest)[L], source_t source, int32_t val,
       val = calcRESXto100(val);
       formatNumberAsString(dest, len, val, flags);
     }
-  }
-  else {
+  } else {
     formatNumberAsString(dest, len, val, flags);
   }
 
   return dest;
 }
 
-void formatNumberAsString(char *buffer, uint8_t buffer_size, int32_t val, LcdFlags flags, uint8_t len, const char * prefix, const char * suffix)
+void formatNumberAsString(char *buffer, uint8_t buffer_size, int32_t val,
+                          LcdFlags flags, uint8_t len, const char *prefix,
+                          const char *suffix)
 {
   if (buffer) {
-    char str[48+1]; // max=16 for the prefix, 16 chars for the number, 16 chars for the suffix
+    char str[48 + 1];  // max=16 for the prefix, 16 chars for the number, 16
+                       // chars for the suffix
     char *s = str + 32;
     *s = '\0';
     int idx = 0;
@@ -927,8 +1017,7 @@ void formatNumberAsString(char *buffer, uint8_t buffer_size, int32_t val, LcdFla
       if (mode != 0 && idx == mode) {
         mode = 0;
         *--s = '.';
-        if (val == 0)
-          *--s = '0';
+        if (val == 0) *--s = '0';
       }
     } while (val != 0 || mode > 0 || (mode == MODE(LEADING0) && idx < len));
     if (neg) *--s = '-';
@@ -956,7 +1045,7 @@ std::string formatNumberAsString(int32_t val, LcdFlags flags, uint8_t len,
   return std::string(s);
 }
 
-char *getSourceCustomValueString(source_t source, int32_t val, LcdFlags flags)
+char *getSourceCustomValueString(mixsrc_t source, int32_t val, LcdFlags flags)
 {
   return getSourceCustomValueString(_static_str_buffer, source, val, flags);
 }
@@ -980,8 +1069,78 @@ std::string getGVarValue(uint8_t gvar, gvar_t value, LcdFlags flags)
       value, g_model.gvars[gvar].unit ? UNIT_PERCENT : UNIT_RAW, flags);
 }
 
-#endif // defined(LIBOPENUI)
-#endif // !defined(BOOT)
+std::string getGPSCoord(int32_t value, const char *direction, bool seconds)
+{
+  char s[32] = {};
+  uint32_t absvalue = abs(value);
+  char *tmp = strAppendUnsigned(s, absvalue / 1000000);
+  tmp = strAppend(tmp, "°");
+  absvalue = absvalue % 1000000;
+  absvalue *= 60;
+  if (g_eeGeneral.gpsFormat == 0 || !seconds) {
+    tmp = strAppendUnsigned(tmp, absvalue / 1000000, 2);
+    *tmp++ = '\'';
+    if (seconds) {
+      absvalue %= 1000000;
+      absvalue *= 60;
+      absvalue /= 100000;
+      tmp = strAppendUnsigned(tmp, absvalue / 10);
+      *tmp++ = '.';
+      tmp = strAppendUnsigned(tmp, absvalue % 10);
+      *tmp++ = '"';
+    }
+  } else {
+    tmp = strAppendUnsigned(tmp, absvalue / 1000000, 2);
+    *tmp++ = '.';
+    absvalue /= 1000;
+    tmp = strAppendUnsigned(tmp, absvalue, 3);
+  }
+  *tmp++ = direction[value >= 0 ? 0 : 1];
+  *tmp = '\0';
+  return std::string(s);
+}
+
+std::string getGPSSensorValue(int32_t longitude, int32_t latitude, LcdFlags flags)
+{
+  if (flags & PREC1) {
+    return getGPSCoord(latitude, "NS", true) + " " +
+           getGPSCoord(longitude, "EW", true);
+  } else {
+    if (flags & RIGHT)
+      return getGPSCoord(longitude, "EW", true) + " " +
+             getGPSCoord(latitude, "NS", true);
+
+    return getGPSCoord(latitude, "NS", true) + " " +
+           getGPSCoord(longitude, "EW", true);
+  }
+}
+
+std::string getGPSSensorValue(TelemetryItem &telemetryItem, LcdFlags flags)
+{
+  return getGPSSensorValue(telemetryItem.gps.longitude, telemetryItem.gps.latitude, flags);
+}
+
+std::string getTelemDate(TelemetryItem &telemetryItem)
+{
+  return formatNumberAsString(telemetryItem.datetime.year, LEADING0 | LEFT, 4) +
+         "-" +
+         formatNumberAsString(telemetryItem.datetime.month, LEADING0 | LEFT,
+                              2) +
+         "-" +
+         formatNumberAsString(telemetryItem.datetime.day, LEADING0 | LEFT, 2);
+}
+
+std::string getTelemTime(TelemetryItem &telemetryItem)
+{
+  return formatNumberAsString(telemetryItem.datetime.hour, LEADING0 | LEFT, 2) +
+         ":" +
+         formatNumberAsString(telemetryItem.datetime.min, LEADING0 | LEFT, 2) +
+         ":" +
+         formatNumberAsString(telemetryItem.datetime.sec, LEADING0 | LEFT, 2);
+}
+
+#endif  // defined(LIBOPENUI)
+#endif  // !defined(BOOT)
 
 char *strAppendUnsigned(char *dest, uint32_t value, uint8_t digits,
                         uint8_t radix)
@@ -1015,6 +1174,8 @@ char *strAppendSigned(char *dest, int32_t value, uint8_t digits, uint8_t radix)
 
 char *strAppend(char *dest, const char *source, int len)
 {
+  if (source == nullptr) { *dest = '\0'; return dest; }
+
   while ((*dest++ = *source++)) {
     if (--len == 0) {
       *dest = '\0';
@@ -1093,27 +1254,39 @@ char *strAppendDate(char *str, bool time)
 #if !defined(BOOT)
 #endif
 
+/** 
+ * @brief Count the number of digits in a string.
+ * Works with negative numbers, and zero is considered to have 1 digit.
+ * @param number Integer whose digits are to be counted.
+ * @return The number of digits in the integer.
+ */
+int countDigits(int number)
+{
+  number = std::abs(number);  // Handle negative numbers if any
+  if (number == 0) return 1;  // Special case for 0
+  int count = 0;
+  while (number > 0) {
+    number /= 10;
+    count++;
+  }
+  return count;
+}
+
 // Manage timezones
 // For backward compatibility timezone is stored as two separate values:
 //   timezone = hour value
 //   timezoneMinutes - minute value / 15
 
-int8_t minTimezone()
-{
-  return -12 * 4;
-}
+int8_t minTimezone() { return -12 * 4; }
 
-int8_t maxTimezone()
-{
-  return 14 * 4;
-}
+int8_t maxTimezone() { return 14 * 4; }
 
 std::string timezoneDisplay(int tz)
 {
   char s[16];
   int h = abs(tz / 4);
   int m = abs(tz % 4) * 15;
-  sprintf(s,"%s%d:%02d", (tz < 0) ? "-" : "", h, m);
+  sprintf(s, "%s%d:%02d", (tz < 0) ? "-" : "", h, m);
   return std::string(s);
 }
 
@@ -1122,15 +1295,9 @@ int timezoneIndex(int8_t tzHour, int8_t tzMinute)
   return (tzHour * 4) + tzMinute;
 }
 
-int8_t timezoneHour(int tz)
-{
-  return tz / 4;
-}
+int8_t timezoneHour(int tz) { return tz / 4; }
 
-int8_t timezoneMinute(int tz)
-{
-  return tz % 4;
-}
+int8_t timezoneMinute(int tz) { return tz % 4; }
 
 int timezoneOffsetSeconds(int8_t tzHour, int8_t tzMinute)
 {

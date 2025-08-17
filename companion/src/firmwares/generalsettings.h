@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -43,6 +44,9 @@ constexpr char AIM_GS_INTMODULEBAUDRATE[]  {"gs.intmodulebaudrate"};
 constexpr char AIM_GS_STICKDEADZONE[]      {"gs.stickdeadzone"};
 constexpr char AIM_GS_UARTSAMPLEMODE[]     {"gs.uartsamplemode"};
 constexpr char AIM_GS_HATSMODE[]           {"gs.hatsmode"};
+constexpr char AIM_GS_STICKMODE[]          {"gs.stickmode"};
+constexpr char AIM_GS_TEMPLATESETUP[]      {"gs.templatesetup"};
+
 constexpr char AIM_TRAINERMIX_MODE[]       {"trainermix.mode"};
 constexpr char AIM_TRAINERMIX_SRC[]        {"trainermix.src"};
 
@@ -55,6 +59,17 @@ enum UartModes {
   UART_MODE_TELEMETRY,
   UART_MODE_SBUS_TRAINER,
   UART_MODE_DEBUG
+};
+
+class RGBLedColor {
+  public:
+    RGBLedColor() { clear(); }
+    int r;
+    int g;
+    int b;
+    void clear() { memset(reinterpret_cast<void *>(this), 0, sizeof(RGBLedColor)); }
+    void setColor(int red, int green, int blue) { r = red; g = green; b = blue; }
+    QColor getQColor() { return QColor(r, g, b); }
 };
 
 class TrainerMix {
@@ -103,6 +118,7 @@ constexpr int TTS_LANGUAGE_LEN        {2};
 constexpr int HARDWARE_NAME_LEN       {3};
 constexpr int REGISTRATION_ID_LEN     {8};
 constexpr int SELECTED_THEME_NAME_LEN {26};
+constexpr int SWITCH_INPUTINDEX_NONE  {-1};
 
 class GeneralSettings {
   Q_DECLARE_TR_FUNCTIONS(GeneralSettings)
@@ -186,6 +202,19 @@ class GeneralSettings {
       PPM_US
     };
 
+    enum StickMode {
+      STICK_MODE_1,
+      STICK_MODE_2,
+      STICK_MODE_3,
+      STICK_MODE_4,
+      STICK_MODE_COUNT,
+    };
+
+    enum RadioTypeContext {
+      RadioTypeContextAir     = 1 << 1,
+      RadioTypeContextSurface = 1 << 2,
+    };
+
     GeneralSettings() { clear(); }
     void clear();
     void init();
@@ -197,12 +226,11 @@ class GeneralSettings {
     int getDefaultChannel(unsigned int stick) const;
     bool fix6POSCalibration();
 
+    bool manuallyEdited;
+
     char semver[8 + 1];
     unsigned int version;
     unsigned int variant;
-    int calibMid[CPN_MAX_ANALOGS];
-    int calibSpanNeg[CPN_MAX_ANALOGS];
-    int calibSpanPos[CPN_MAX_ANALOGS];
     unsigned int currModelIndex;
     char currModelFilename[CURR_MODEL_FILENAME_LEN + 1];
     unsigned int contrast;
@@ -221,6 +249,7 @@ class GeneralSettings {
     BeeperMode beeperMode;
     bool disableAlarmWarning;
     bool disableRssiPoweroffAlarm;
+    bool disableTrainerPoweroffAlarm;
     unsigned int usbMode;
     unsigned int hatsMode;
     unsigned int stickDeadZone;
@@ -236,7 +265,7 @@ class GeneralSettings {
     unsigned int internalModuleBaudrate;
     bool minuteBeep;
     bool preBeep;
-    bool flashBeep;
+    bool alarmsFlash;
     int splashMode;
     bool dontPlayHello;
     unsigned int backlightDelay;
@@ -287,21 +316,15 @@ class GeneralSettings {
     unsigned int backlightColor;
     bool modelQuickSelect;
     CustomFunctionData customFn[CPN_MAX_SPECIAL_FUNCTIONS];
-    char switchName[CPN_MAX_SWITCHES][HARDWARE_NAME_LEN + 1];
-    unsigned int switchConfig[CPN_MAX_SWITCHES];
-    char stickName[CPN_MAX_STICKS][HARDWARE_NAME_LEN + 1];
-    char potName[CPN_MAX_POTS][HARDWARE_NAME_LEN + 1];
-    unsigned int potConfig[CPN_MAX_POTS];
-    char sliderName[CPN_MAX_SLIDERS][HARDWARE_NAME_LEN + 1];
-    unsigned int sliderConfig[CPN_MAX_SLIDERS];
 
     char registrationId[REGISTRATION_ID_LEN + 1];
-    int gyroMax;
-    int gyroOffset;
+    int imuMax;
+    int imuOffset;
     int uartSampleMode;
 
     int pwrOnSpeed;
     int pwrOffSpeed;
+    bool disablePwrOnOffHaptic;
 
     char selectedTheme[SELECTED_THEME_NAME_LEN + 1];
 
@@ -318,18 +341,70 @@ class GeneralSettings {
     bool modelSFDisabled;
     bool modelCustomScriptsDisabled;
     bool modelTelemetryDisabled;
+    unsigned int pwrOffIfInactive;
 
-    bool switchPositionAllowedTaranis(int index) const;
-    bool switchSourceAllowedTaranis(int index) const;
-    bool isPotAvailable(int index) const;
-    bool isSliderAvailable(int index) const;
-    bool isMultiPosPot(int index) const;
+    int modelSelectLayout;
+    int labelSingleSelect;
+    int labelMultiMode;
+    int favMultiMode;
+
+    bool invertLCD;
+
+    // default values are retrieved from the radio json file
+
+    struct InputCalib {
+      int mid;
+      int spanNeg;
+      int spanPos;
+    };
+
+    struct InputConfig {
+      Board::AnalogInputType type;
+      char name[HARDWARE_NAME_LEN + 1];
+      Board::FlexType flexType;
+      bool inverted;
+      InputCalib calib;
+    };
+
+    InputConfig inputConfig[CPN_MAX_INPUTS];
+
+    struct SwitchConfig {
+      char name[HARDWARE_NAME_LEN + 1];
+      Board::SwitchType type;
+      bool inverted;
+      int inputIdx;  //  used if switch tag = FLn, value -1 = none selected
+      // CFS settings
+      unsigned int start;
+      unsigned int onColorLuaOverride;
+      unsigned int offColorLuaOverride;
+      RGBLedColor onColor;
+      RGBLedColor offColor;
+    };
+
+    SwitchConfig switchConfig[CPN_MAX_SWITCHES];
+
+    bool switchPositionAllowed(int index) const;
+    bool switchSourceAllowed(int index) const;
+
+    bool isInputAvailable(int index) const;
+    bool isInputMultiPosPot(int index) const;
+    bool isInputPot(int index) const;
+    bool isInputSlider(int index) const;
+    bool isInputStick(int index) const;
+    bool isInputFlexSwitchAvailable(int index) const;
+    bool isSwitchAvailable(int index) const;
+    bool isSwitchFlex(int index) const;
+    bool isSwitchFunc(int index) const;
+    bool unassignedInputFlexSwitches() const;
+
     QString antennaModeToString() const;
     QString bluetoothModeToString() const;
     QString serialPortModeToString(int port_nr) const;
     QString internalModuleBaudrateToString() const;
     QString uartSampleModeToString() const;
     QString hatsModeToString() const;
+    QString stickModeToString() const;
+    QString templateSetupToString() const;
 
     static QString antennaModeToString(int value);
     static QString bluetoothModeToString(int value);
@@ -339,6 +414,8 @@ class GeneralSettings {
     static FieldRange getTxCurrentCalibration();
     static QString uartSampleModeToString(int value);
     static QString hatsModeToString(int value);
+    static QString stickModeToString(int value);
+    static QString templateSetupToString(int value, bool isBoardAir);
 
     static AbstractStaticItemModel * antennaModeItemModel(bool model_setup = false);
     static AbstractStaticItemModel * bluetoothModeItemModel();
@@ -347,4 +424,8 @@ class GeneralSettings {
     static AbstractStaticItemModel * stickDeadZoneItemModel();
     static AbstractStaticItemModel * uartSampleModeItemModel();
     static AbstractStaticItemModel * hatsModeItemModel(bool radio_setup = true);
+    static AbstractStaticItemModel * stickModeItemModel();
+    static AbstractStaticItemModel * templateSetupItemModel();
+
+    void validateFlexSwitches();
 };

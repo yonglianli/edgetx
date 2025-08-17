@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _BOARD_H_
-#define _BOARD_H_
+#pragma once
 
 #include <inttypes.h>
 #include "hal.h"
@@ -28,12 +27,8 @@
 #include "hal/watchdog_driver.h"
 
 #include "definitions.h"
-#include "opentx_constants.h"
+#include "edgetx_constants.h"
 #include "board_common.h"
-
-#if defined(RADIO_TX12) || defined(RADIO_TX12MK2) || defined(RADIO_BOXER)  || defined(RADIO_ZORRO)  || defined(RADIO_POCKET) || defined(RADIO_MT12)
-  #define  NAVIGATION_X7_TX12
-#endif
 
 #if defined(ROTARY_ENCODER_NAVIGATION)
 // Rotary Encoder driver
@@ -41,15 +36,31 @@ void rotaryEncoderInit();
 void rotaryEncoderCheck();
 #endif
 
-#if defined(STM32F413xx)
+#if defined(STM32F413xx) || defined(STM32F407xG)
 #define FLASHSIZE                       0x100000 // 1M
 #else
 #define FLASHSIZE                       0x80000  // 512k
 #endif
+#define FLASH_PAGESIZE                  256
 #define BOOTLOADER_SIZE                 0x8000
 #define FIRMWARE_ADDRESS                0x08000000
+#define FIRMWARE_LEN(fsize)             (fsize - BOOTLOADER_SIZE)
+#define FIRMWARE_MAX_LEN                (FLASHSIZE - BOOTLOADER_SIZE)
+#define APP_START_ADDRESS               (uint32_t)(FIRMWARE_ADDRESS + BOOTLOADER_SIZE)
 
 #define LUA_MEM_MAX                     (0)    // max allowed memory usage for complete Lua  (in bytes), 0 means unlimited
+
+#if defined(PCBXLITE)
+# define BOOTLOADER_KEYS                0x0F
+#elif defined(RADIO_MT12)
+# define BOOTLOADER_KEYS                0x06
+#else
+# define BOOTLOADER_KEYS                0x42
+#endif
+
+#if defined(RADIO_FAMILY_T20)
+# define SECONDARY_BOOTLOADER_KEYS      0x1200
+#endif
 
 extern uint16_t sessionTimer;
 
@@ -64,17 +75,9 @@ enum {
   PCBREV_X7_40 = 1,
 };
 
-// Flash Write driver
-#define FLASH_PAGESIZE 256
-void unlockFlash();
-void lockFlash();
-void flashWrite(uint32_t * address, const uint32_t * buffer);
-uint32_t isFirmwareStart(const uint8_t * buffer);
-uint32_t isBootloaderStart(const uint8_t * buffer);
-
 // Pulses driver
-#define INTERNAL_MODULE_ON()   GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
-#define INTERNAL_MODULE_OFF()  GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
+#define INTERNAL_MODULE_ON()   gpio_set(INTMODULE_PWR_GPIO)
+#define INTERNAL_MODULE_OFF()  gpio_clear(INTMODULE_PWR_GPIO)
 
 #if (defined(INTERNAL_MODULE_PXX1) || defined(INTERNAL_MODULE_PXX2)) && (!defined(PCBX9LITE) || defined(PCBX9LITES))
   #define HARDWARE_INTERNAL_RAS
@@ -86,27 +89,6 @@ uint32_t isBootloaderStart(const uint8_t * buffer);
 // Trainer driver
 #define SLAVE_MODE()                    (g_model.trainerData.mode == TRAINER_MODE_SLAVE)
 
-#if defined(TRAINER_DETECT_GPIO)
-  // Trainer detect is a switch on the jack
-  #define TRAINER_CONNECTED()           (GPIO_ReadInputDataBit(TRAINER_DETECT_GPIO, TRAINER_DETECT_GPIO_PIN) == TRAINER_DETECT_GPIO_PIN_VALUE)
-#elif defined(PCBXLITES)
-  // Trainer is on the same connector than Headphones
-  enum JackState
-  {
-    SPEAKER_ACTIVE,
-    HEADPHONE_ACTIVE,
-    TRAINER_ACTIVE,
-  };
-  extern uint8_t jackState;
-  #define TRAINER_CONNECTED()           (jackState == TRAINER_ACTIVE)
-#elif defined(PCBXLITE)
-  // No Tainer jack on Taranis X-Lite
-  #define TRAINER_CONNECTED()           false
-#else
-  // Trainer detect catches PPM, detection would use more CPU
-  #define TRAINER_CONNECTED()           true
-#endif
-
 // POTS and SLIDERS default configuration
 #if defined(RADIO_BOXER)
 #define XPOS_CALIB_DEFAULT  {0x5, 0xd, 0x16, 0x1f, 0x28}
@@ -114,42 +96,25 @@ uint32_t isBootloaderStart(const uint8_t * buffer);
 
 #if defined(FUNCTION_SWITCHES)
 
-#define NUM_FUNCTIONS_SWITCHES 6
-
-#define DEFAULT_FS_CONFIG                                         \
-  (SWITCH_2POS << 10) + (SWITCH_2POS << 8) + (SWITCH_2POS << 6) + \
-      (SWITCH_2POS << 4) + (SWITCH_2POS << 2) + (SWITCH_2POS << 0)
-
-#define DEFAULT_FS_GROUPS                                 \
-  (1 << 10) + (1 << 8) + (1 << 6) + (1 << 4) + (1 << 2) + \
-      (1 << 0)  // Set all FS to group 1 to act like a 6pos
-
-#define DEFAULT_FS_STARTUP_CONFIG                         \
-  ((FS_START_PREVIOUS << 10) + (FS_START_PREVIOUS << 8) + \
-   (FS_START_PREVIOUS << 6) + (FS_START_PREVIOUS << 4) +  \
-   (FS_START_PREVIOUS << 2) +                             \
-   (FS_START_PREVIOUS << 0))  // keep last state by default
-
+#if defined(RADIO_GX12)
+#define NUM_FUNCTIONS_SWITCHES 8
+#define NUM_FUNCTIONS_GROUPS   4
 #else
+#define NUM_FUNCTIONS_SWITCHES 6
+#define NUM_FUNCTIONS_GROUPS   3
+#endif
+
+#else //FUNCTION_SWITCHES
 
 #define NUM_FUNCTIONS_SWITCHES 0
 
 #endif
 
-#if defined(FUNCTION_SWITCHES)
-extern uint8_t fsPreviousState;
-void evalFunctionSwitches();
-void setFSStartupPosition();
-void fsLedOff(uint8_t);
-void fsLedOn(uint8_t);
-uint8_t getFSLogicalState(uint8_t index);
-uint8_t getFSPhysicalState(uint8_t index);
-bool getFSLedState(uint8_t index);
-#endif
-
 #if defined(ADC_GPIO_PIN_STICK_TH)
   #define SURFACE_RADIO  true
 #endif
+
+#define HAS_HARDWARE_OPTIONS
 
 PACK(typedef struct {
   uint8_t pcbrev:2;
@@ -163,7 +128,7 @@ extern HardwareOptions hardwareOptions;
   #define BATTERY_WARN                  87 // 8.7V
   #define BATTERY_MIN                   85 // 8.5V
   #define BATTERY_MAX                   115 // 11.5V
-#elif defined(PCBXLITE) || defined(RADIO_T20)
+#elif defined(PCBXLITE) || defined(RADIO_FAMILY_T20)
   // 2 x Li-Ion
   #define BATTERY_WARN                  66 // 6.6V
   #define BATTERY_MIN                   67 // 6.7V
@@ -202,16 +167,16 @@ extern "C" {
 
 // Power driver
 #define SOFT_PWR_CTRL
+#if defined(PWR_BUTTON_PRESS) && !defined(RADIO_COMMANDO8)
+#  define STARTUP_ANIMATION
+#endif
+
 void pwrInit();
 uint32_t pwrCheck();
 void pwrOn();
 void pwrOff();
 bool pwrPressed();
 bool pwrOffPressed();
-#if defined(PWR_BUTTON_PRESS)
-#define STARTUP_ANIMATION
-uint32_t pwrPressedDuration();
-#endif
 void pwrResetHandler();
 #define pwrForcePressed()   false
 
@@ -228,7 +193,7 @@ void pwrResetHandler();
 void backlightInit();
 void backlightDisable();
 void backlightFullOn();
-uint8_t isBacklightEnabled();
+bool isBacklightEnabled();
 
 #if defined(PCBX9E) || defined(PCBX9DP)
   void backlightEnable(uint8_t level, uint8_t color);
@@ -249,43 +214,12 @@ uint8_t isBacklightEnabled();
 void debugPutc(const char c);
 
 // Audio driver
-void audioInit() ;
-void audioEnd() ;
-void dacStart();
-void dacStop();
-void setSampleRate(uint32_t frequency);
-#define VOLUME_LEVEL_MAX  23
-#define VOLUME_LEVEL_DEF  12
-#if !defined(SOFTWARE_VOLUME)
-void setScaledVolume(uint8_t volume);
-void setVolume(uint8_t volume);
-int32_t getVolume();
+void audioInit();
+
+#if defined(PCBXLITES)
+#define SHARED_DSC_HEADPHONE_JACK
+void handleJackConnection();
 #endif
-#if defined(AUDIO_SPEAKER_ENABLE_GPIO)
-void initSpeakerEnable();
-void enableSpeaker();
-void disableSpeaker();
-#else
-static inline void initSpeakerEnable() { }
-static inline void enableSpeaker() { }
-static inline void disableSpeaker() { }
-#endif
-#if defined(HEADPHONE_TRAINER_SWITCH_GPIO)
-void initHeadphoneTrainerSwitch();
-void enableHeadphone();
-void enableTrainer();
-#else
-static inline void initHeadphoneTrainerSwitch() { }
-static inline void enableHeadphone() { }
-static inline void enableTrainer() { }
-#endif
-#if defined(JACK_DETECT_GPIO)
-void initJackDetect();
-bool isJackPlugged();
-#endif
-void audioConsumeCurrentBuffer();
-#define audioDisableIrq()               __disable_irq()
-#define audioEnableIrq()                __enable_irq()
 
 // Haptic driver
 void hapticInit();
@@ -305,6 +239,10 @@ const etx_serial_port_t* auxSerialGetPort(int port_nr);
 #if defined(USB_CHARGER)
 void usbChargerInit();
 bool usbChargerLed();
+#endif
+
+#if defined(RADIO_V14) || defined(RADIO_V12)
+  uint16_t getSixPosAnalogValue(uint16_t adcValue);
 #endif
 
 // LED driver
@@ -337,13 +275,15 @@ void ledBlue();
 
 #if defined(RADIO_MT12)
 #define LCD_BRIGHTNESS_DEFAULT          50
+#elif defined(RADIO_T12MAX)
+#define LCD_BRIGHTNESS_DEFAULT          30
 #endif
 
 #if defined(OLED_SCREEN)
   #define LCD_CONTRAST_DEFAULT          254 // full brightness
 #elif defined(RADIO_TX12) || defined(RADIO_TX12MK2) || defined(RADIO_BOXER) || defined(RADIO_MT12)
   #define LCD_CONTRAST_DEFAULT          20
-#elif defined(RADIO_TPRO) || defined(RADIO_FAMILY_JUMPER_T12) || defined(RADIO_TPRO) || defined(RADIO_COMMANDO8)
+#elif defined(RADIO_TPRO) || defined(RADIO_FAMILY_JUMPER_T12) || defined(RADIO_TPRO) || defined(RADIO_COMMANDO8) || defined(RADIO_T12MAX)
   #define LCD_CONTRAST_DEFAULT          25
 #else
   #define LCD_CONTRAST_DEFAULT          15
@@ -376,6 +316,9 @@ void lcdRefresh();
 void lcdRefresh(bool wait=true); // TODO uint8_t wait to simplify this
 #endif
 void lcdSetRefVolt(unsigned char val);
+#if LCD_W == 128
+void lcdSetInvert(bool invert);
+#endif
 #ifdef __cplusplus
 void lcdSetContrast(bool useDefault = false);
 #endif
@@ -402,27 +345,32 @@ void setTopBatteryValue(uint32_t volts);
 
 #define INTMODULE_FIFO_SIZE            128
 
-#if defined (RADIO_TX12)
-  #define BATTERY_DIVIDER 22830
-#elif defined (RADIO_T8) || defined(RADIO_COMMANDO8)
-  #define BATTERY_DIVIDER 50000
-#elif defined (RADIO_ZORRO) || defined(RADIO_TX12MK2) || defined(RADIO_BOXER) || defined(RADIO_MT12) || defined(RADIO_POCKET)
-  #define BATTERY_DIVIDER 23711 // = 2047*128*BATT_SCALE/(100*(VREF*(160+499)/160))
-#elif defined (RADIO_LR3PRO)
-  #define BATTERY_DIVIDER 39500
-#else
-  #define BATTERY_DIVIDER 26214
-#endif 
-
-#if defined(RADIO_ZORRO) || defined(RADIO_TX12MK2) || defined(RADIO_BOXER) || defined(RADIO_MT12) || defined(RADIO_POCKET)
-  #define VOLTAGE_DROP 45
-#elif defined(RADIO_TPROV2) || defined(RADIO_T20)
-  #define VOLTAGE_DROP 60
-#else
+#if defined(RADIO_TLITE)
+  #define BATTERY_DIVIDER 27500    // TODO: fix when we have proper schematics
   #define VOLTAGE_DROP 20
+#elif defined(MANUFACTURER_RADIOMASTER) || defined(MANUFACTURER_JUMPER)
+  // --- MOSFET ---- R1 --- MCU
+  //                     |__ R2 --- GND
+  //
+  #define VBAT_DIV_R1         499 // kOhms
+  #define VBAT_DIV_R2         160 // kOhms
+  #if defined(MANUFACTURER_JUMPER)
+    #define VBAT_MOSFET_DROP   50 // * 10mV
+  #else
+    #define VBAT_MOSFET_DROP   25 // * 10mV
+  #endif
+#else
+  #if defined (RADIO_T8) || defined(RADIO_COMMANDO8)
+    #define BATTERY_DIVIDER 50000
+  #elif defined (RADIO_LR3PRO)
+    #define BATTERY_DIVIDER 39500
+  #else
+    #define BATTERY_DIVIDER 26214
+  #endif 
+  #define VOLTAGE_DROP         20
 #endif
 
-#if defined(RADIO_T20)
+#if defined(RADIO_FAMILY_T20)
 #define NUM_TRIMS                               8
 #else
 #define NUM_TRIMS                               4
@@ -430,4 +378,3 @@ void setTopBatteryValue(uint32_t volts);
 
 #define NUM_TRIMS_KEYS                          (NUM_TRIMS * 2)
 
-#endif // _BOARD_H_

@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "hal/adc_driver.h"
 
 #define HOLDANAVALUEFRAMES 4 /* 4* 50ms = 200 ms update rate */
@@ -41,7 +41,6 @@ void menuRadioDiagAnalogs(event_t event)
   switch (event) {
     case EVT_KEY_FIRST(KEY_RIGHT):
     case EVT_KEY_BREAK(KEY_PAGEDN):
-    case EVT_KEY_BREAK(KEY_PAGE):
     {
      if (viewpage == ANAVIEW_LAST)
        viewpage = ANAVIEW_FIRST;
@@ -53,7 +52,6 @@ void menuRadioDiagAnalogs(event_t event)
 
     case EVT_KEY_FIRST(KEY_LEFT):
     case EVT_KEY_BREAK(KEY_PAGEUP):
-    case EVT_KEY_LONG(KEY_PAGE):
     {
      if (viewpage == ANAVIEW_FIRST)
        viewpage = ANAVIEW_LAST;
@@ -88,22 +86,28 @@ void menuRadioDiagAnalogs(event_t event)
       x = INDENT_WIDTH;
       y += FH;
     }
-    drawStringWithIndex(x, y, "A", i + 1);
+    if (((adcGetInputMask() & (1 << i)) != 0) && i < adcGetMaxInputs(ADC_INPUT_MAIN)) {
+      lcdDrawText(x, y, "D");
+      lcdDrawNumber(lcdNextPos, y, i + 1);
+    }
+    else {
+      lcdDrawNumber(x, y, i+1, LEADING0|LEFT, 2);
+    }
     lcdDrawChar(lcdNextPos, y, ':');
     switch (viewpage) {
       case (ANAVIEW_RAWLOWFPS):
         if (entryCount == 0) {
           lastShownAnalogValue[i] = getAnalogValue(i); // Update value
         }
-        lcdDrawNumber(x+3*FW-1, y, lastShownAnalogValue[i],
+        lcdDrawNumber(x+3*FW+1, y, lastShownAnalogValue[i],
                       LEADING0|LEFT, 4);
         break;
       case (ANAVIEW_CALIB):
       default:
-        lcdDrawNumber(x+3*FW-1, y, anaIn(i), LEADING0|LEFT, 4);
+        lcdDrawNumber(x+3*FW+1, y, anaIn(i), LEADING0|LEFT, 4);
         break;
     }
-    lcdDrawNumber(x+10*FW-1, y,
+    lcdDrawNumber(x+(LCD_W / 2 - INDENT_WIDTH), y,
                   (int16_t)calibratedAnalogs[i]*25/256,
                   RIGHT);
   }

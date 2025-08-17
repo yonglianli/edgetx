@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -22,6 +23,7 @@
 #include "helpers.h"
 #include "filtereditemmodels.h"
 #include "curveimagewidget.h"
+#include "namevalidator.h"
 
 LimitsGroup::LimitsGroup(Firmware * firmware, TableLayout * tableLayout, int row, int col, int & value, const ModelData & model, GeneralSettings & generalSettings,
                          int min, int max, int deflt, FilteredItemModel * gvarModel, ModelPanel * panel):
@@ -91,6 +93,8 @@ ChannelsPanel::ChannelsPanel(QWidget * parent, ModelData & model, GeneralSetting
   ModelPanel(parent, model, generalSettings, firmware),
   sharedItemModels(sharedItemModels)
 {
+  Board::Type board = firmware->getBoard();
+
   chnCapability = firmware->getCapability(Outputs);
   int channelNameMaxLen = firmware->getCapability(ChannelsName);
 
@@ -101,13 +105,16 @@ ChannelsPanel::ChannelsPanel(QWidget * parent, ModelData & model, GeneralSetting
 
   int gvid = dialogFilteredItemModels->registerItemModel(new FilteredItemModel(sharedItemModels->getItemModel(AbstractItemModel::IMID_GVarRef)), "GVarRef");
 
+  curveRefFilteredItemModels = new CurveRefFilteredFactory(sharedItemModels,
+                                                           firmware->getCapability(HasMixerExpo) ? 0 : FilteredItemModel::PositiveFilter);
+
   QStringList headerLabels;
   headerLabels << "#";
   if (channelNameMaxLen > 0) {
     headerLabels << tr("Name");
   }
   headerLabels << tr("Subtrim") << tr("Min") << tr("Max") << tr("Direction");
-  if (IS_HORUS_OR_TARANIS(firmware->getBoard()))
+  if (IS_HORUS_OR_TARANIS(board))
     headerLabels << tr("Curve") << tr("Plot");
   if (firmware->getCapability(PPMCenter))
     headerLabels << tr("PPM Center");
@@ -134,8 +141,7 @@ ChannelsPanel::ChannelsPanel(QWidget * parent, ModelData & model, GeneralSetting
       name[i] = new QLineEdit(this);
       name[i]->setProperty("index", i);
       name[i]->setMaxLength(channelNameMaxLen);
-      QRegExp rx(CHAR_FOR_NAMES_REGEX);
-      name[i]->setValidator(new QRegExpValidator(rx, this));
+      name[i]->setValidator(new NameValidator(board, this));
       connect(name[i], SIGNAL(editingFinished()), this, SLOT(nameEdited()));
       tableLayout->addWidget(i, col++, name[i]);
     }
@@ -160,20 +166,15 @@ ChannelsPanel::ChannelsPanel(QWidget * parent, ModelData & model, GeneralSetting
     if (IS_HORUS_OR_TARANIS(firmware->getBoard())) {
       curveCB[i] = new QComboBox(this);
       curveCB[i]->setProperty("index", i);
-      curveCB[i]->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-      curveCB[i]->setModel(dialogFilteredItemModels->getItemModel(crvid));
-      connect(curveCB[i], SIGNAL(currentIndexChanged(int)), this, SLOT(curveEdited()));
       tableLayout->addWidget(i, col++, curveCB[i]);
 
       curveImage[i] = new CurveImageWidget(this);
-      int crvidx = model.limitData[i].curve.value - 1;
-      QColor pencolor = colors[crvidx >= 0 ? crvidx : Qt::black];
-      curveImage[i]->set(&model, firmware, sharedItemModels, crvidx, pencolor, 3);
-      curveImage[i]->setGrid(Qt::gray, 2);
       curveImage[i]->setProperty("index", i);
       curveImage[i]->setFixedSize(QSize(100, 100));
-      connect(curveImage[i], &CurveImageWidget::doubleClicked, this, &ChannelsPanel::on_curveImageDoubleClicked);
       tableLayout->addWidget(i, col++, curveImage[i]);
+
+      curveGroup[i] = new CurveReferenceUIManager(curveCB[i], curveImage[i], model.limitData[i].curve, model, sharedItemModels,
+                                                  curveRefFilteredItemModels, this);
     }
 
     // PPM center
@@ -199,6 +200,7 @@ ChannelsPanel::ChannelsPanel(QWidget * parent, ModelData & model, GeneralSetting
       tableLayout->addWidget(i, col++, symlimitsChk[i]);
     }
   }
+
   update();
 
   disableMouseScrolling();
@@ -220,8 +222,10 @@ ChannelsPanel::~ChannelsPanel()
     delete curveCB[i];
     delete centerSB[i];
     delete symlimitsChk[i];
+    delete curveGroup[i];
   }
   delete dialogFilteredItemModels;
+  delete curveRefFilteredItemModels;
 }
 
 void ChannelsPanel::symlimitsEdited()
@@ -268,24 +272,6 @@ void ChannelsPanel::invEdited()
   }
 }
 
-void ChannelsPanel::curveEdited()
-{
-  if (!lock) {
-    QComboBox *cb = qobject_cast<QComboBox*>(sender());
-    int index = cb->property("index").toInt();
-    //  ignore unnecessary updates that could be triggered by updates to the data model
-    LimitData &ld = model->limitData[index];
-    if (ld.curve != CurveReference(CurveReference::CURVE_REF_CUSTOM, cb->itemData(cb->currentIndex()).toInt())) {
-      ld.curve = CurveReference(CurveReference::CURVE_REF_CUSTOM, cb->itemData(cb->currentIndex()).toInt());
-      curveImage[index]->setIndex(abs(ld.curve.value) - 1);
-      if (abs(ld.curve.value) > 0)
-        curveImage[index]->setPen(colors[abs(ld.curve.value) - 1], 3);
-      updateLine(index);
-      emit modified();
-    }
-  }
-}
-
 void ChannelsPanel::ppmcenterEdited()
 {
   if (!lock) {
@@ -315,16 +301,6 @@ void ChannelsPanel::updateLine(int i)
   chnMin[i]->setValue(chn.min);
   chnMax[i]->setValue(chn.max);
   invCB[i]->setCurrentIndex((chn.revert) ? 1 : 0);
-  if (IS_HORUS_OR_TARANIS(firmware->getBoard())) {
-    curveCB[i]->setCurrentIndex(curveCB[i]->findData(chn.curve.value));
-    if (chn.curve.value == 0) {
-      curveImage[i]->setVisible(false);
-    }
-    else {
-      curveImage[i]->setVisible(true);
-      curveImage[i]->draw();
-    }
-  }
   if (firmware->getCapability(PPMCenter)) {
     centerSB[i]->setValue(chn.ppmCenter + 1500);
   }
@@ -493,15 +469,4 @@ void ChannelsPanel::updateItemModels()
 {
   sharedItemModels->update(AbstractItemModel::IMUE_Channels);
   emit modified();
-}
-
-void ChannelsPanel::on_curveImageDoubleClicked()
-{
-  bool ok = false;
-  int index = sender()->property("index").toInt(&ok);
-
-  if (ok && curveImage[abs(index)]->edit()) {
-    updateLine(index);
-    emit modified();
-  }
 }

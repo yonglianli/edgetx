@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,7 +24,6 @@
 #include "autowidget.h"
 
 #include <QLineEdit>
-#include <QRegExpValidator>
 
 class AutoLineEdit: public QLineEdit, public AutoWidget
 {
@@ -47,4 +47,6 @@ class AutoLineEdit: public QLineEdit, public AutoWidget
   private:
     char *m_charField;
     QString *m_strField;
+
+    void setFieldInit(int len, GenericPanel * panel);
 };

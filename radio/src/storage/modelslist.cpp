@@ -25,15 +25,13 @@
 
 using std::list;
 
-#if defined(SDCARD_YAML)
-#include "opentx.h"
+#include "edgetx.h"
 #include "storage/sdcard_yaml.h"
 #include "yaml/yaml_datastructs.h"
 #include "yaml/yaml_labelslist.h"
 #include "yaml/yaml_modelslist.h"
 #include "yaml/yaml_parser.h"
-
-#endif
+#include "os/sleep.h"
 
 #if defined(USBJ_EX)
 #include "usb_joystick.h"
@@ -51,6 +49,8 @@ using std::list;
 #else
 #define TRACE_LABELS(...)
 #endif
+
+LAYOUT_SIZE(LABEL_TRUNCATE_LENGTH, 21, 16)
 
 ModelsList modelslist;
 ModelMap modelslabels;
@@ -210,7 +210,7 @@ ModelsVector ModelMap::getModelsByLabels(const LabelsVector &lbls)
 }
 
 /**
- * @brief Returns all models that are in multiple labels (AND function)
+ * @brief Returns all models that match the selected labels
  *
  * @param lbls Labels to search
  * @return ModelsVector aka vector<ModelCell*> of all models belonging to a
@@ -229,17 +229,37 @@ ModelsVector ModelMap::getModelsInLabels(const LabelsVector &lbls)
 
   for (const auto &mdl : modelslist) {
     bool hasAllLabels = true;
+    bool hasAnyLabels = false;
+    bool favLabelIncluded = false;
+    bool hasFavLabel = false;
     LabelsVector mdllables = getLabelsByModel(mdl);
     for (const auto &lbl : lbls) {
       if (lbl == STR_UNLABELEDMODEL)  // If requesting unlabeled model ignore it
         break;
-      if (std::find(mdllables.begin(), mdllables.end(), lbl) ==
-          mdllables.end()) {
-        hasAllLabels = false;
-        break;
+      bool hasLabel = std::find(mdllables.begin(), mdllables.end(), lbl) != mdllables.end();
+      if (lbl == STR_FAVORITE_LABEL) {
+        favLabelIncluded = true;
+        hasFavLabel = hasLabel;
+      } else {
+        if (hasLabel) {
+          hasAnyLabels = true;
+        } else {
+          hasAllLabels = false;
+        }
       }
     }
-    if (hasAllLabels) rv.push_back(mdl);
+    if (favLabelIncluded) {
+      if (g_eeGeneral.favMultiMode == 0) {
+        hasAnyLabels = hasAnyLabels && hasFavLabel;
+        hasAllLabels = hasAllLabels && hasFavLabel;
+      } else if (g_eeGeneral.favMultiMode == 1) {
+        hasAnyLabels = hasAnyLabels || hasFavLabel;
+        hasAllLabels = hasAllLabels && hasFavLabel;
+      }
+    }
+    if (((g_eeGeneral.labelMultiMode == 0) && hasAllLabels) ||
+        ((g_eeGeneral.labelMultiMode == 1) && hasAnyLabels))
+      rv.push_back(mdl);
   }
 
   sortModelsBy(rv, _sortOrder);
@@ -665,6 +685,7 @@ bool ModelMap::renameLabel(const std::string &from, std::string to,
     if(curlen + csvto.size() - csvfrom.size() > LABELS_LENGTH - 1) {
       TRACE("Labels: Rename Error! Labels too long on %s", model->modelName);
       if (progress != nullptr) progress("", 100); // Kill progress dialog
+      free(modeldata);
       return true;
     }
   }
@@ -709,7 +730,7 @@ bool ModelMap::renameLabel(const std::string &from, std::string to,
                              (uint8_t *)modeldata, 0) != NULL);
     }
 #if defined(SIMU)
-    if (SIMU_SLEEP_OR_EXIT_MS(100)) break;
+    sleep_ms(100);
 #endif
   }
 
@@ -840,7 +861,7 @@ bool ModelMap::updateModelFile(ModelCell *cell)
 /**
  * @brief Sorts a ModelsVector by sortby
  *
- * @param mv ModeslVector to sort
+ * @param mv ModelsVector to sort
  * @param sortby NO_SORT, NAME_ASC, NAME_DES, DATE_ASC, DATE_DES,
  */
 
@@ -898,44 +919,6 @@ void ModelsList::clear()
   std::vector<ModelCell *>::clear();
   init();
 }
-
-/**
- * @brief Load and parse the models.txt file
- *
- * @return true On Success
- * @return false On Failure
- */
-
-bool ModelsList::loadTxt()
-{
-  char line[LEN_MODELS_IDX_LINE + 1];
-  ModelCell *model = nullptr;
-
-  FRESULT result =
-      f_open(&file, RADIO_MODELSLIST_PATH, FA_OPEN_EXISTING | FA_READ);
-  if (result == FR_OK) {
-    // TXT reader
-    while (readNextLine(line, LEN_MODELS_IDX_LINE)) {
-      int len = strlen(line);  // TODO could be returned by readNextLine
-      if (len > 2 && line[0] == '[' && line[len - 1] == ']') {
-        line[len - 1] = '\0';
-      } else if (len > 0) {
-        model = new ModelCell(line);
-        push_back(model);
-        if (!strncmp(line, g_eeGeneral.currModelFilename, LEN_MODEL_FILENAME)) {
-          currentModel = model;
-        }
-      }
-    }
-
-    f_close(&file);
-    return true;
-  }
-
-  return false;
-}
-
-#if defined(SDCARD_YAML)
 
 /**
  * @brief Opens a YAML file, reads the data and updates the ModelCell
@@ -1201,35 +1184,19 @@ bool ModelsList::loadYaml()
 
   return true;
 }
-#endif
 
 /**
  * @brief Called to load the model data from file
  *
- * @param fmt Format::txt - Opens models.txt file, Format::yaml_txt - Opens
- * labels.yml
  * @return true on success
  * @return false on failure
  */
 
-bool ModelsList::load(Format fmt)
+bool ModelsList::load()
 {
   if (loaded) return true;
 
-  bool res = false;
-#if !defined(SDCARD_YAML)
-  (void)fmt;
-  res = loadTxt();
-#else
-  FILINFO fno;
-  if (fmt == Format::txt ||
-      (fmt == Format::yaml_txt && f_stat(MODELSLIST_YAML_PATH, &fno) != FR_OK &&
-       f_stat(FALLBACK_MODELSLIST_YAML_PATH, &fno) != FR_OK)) {
-    res = loadTxt();
-  } else {
-    res = loadYaml();
-  }
-#endif
+  bool res = loadYaml();
 
   if (!currentModel) {
     TRACE("ERROR no Current Model Found");
@@ -1262,13 +1229,8 @@ bool ModelsList::load(Format fmt)
 
 const char *ModelsList::save(LabelsVector newOrder)
 {
-#if !defined(SDCARD_YAML)
-  FRESULT result =
-      f_open(&file, RADIO_MODELSLIST_PATH, FA_CREATE_ALWAYS | FA_WRITE);
-#else
   FRESULT result =
       f_open(&file, LABELSLIST_YAML_PATH, FA_CREATE_ALWAYS | FA_WRITE);
-#endif
   if (result != FR_OK) return "Couldn't open labels.yml for writing";
 
   // Save current selection
@@ -1370,32 +1332,6 @@ void ModelsList::updateCurrentModelCell()
   } else {
     TRACE("ModelList Error - No Current Model");
   }
-}
-
-/**
- * @brief Reads a line from a file. Used by loadTxt
- *
- * @param line Storage for the read line
- * @param maxlen maximum read length
- * @return true Success
- * @return false Failure
- */
-
-bool ModelsList::readNextLine(char *line, int maxlen)
-{
-  if (f_gets(line, maxlen, &file) != NULL) {
-    int curlen = strlen(line) - 1;
-    if (line[curlen] ==
-        '\n') {  // remove unwanted chars if file was edited using windows
-      if (line[curlen - 1] == '\r') {
-        line[curlen - 1] = 0;
-      } else {
-        line[curlen] = 0;
-      }
-    }
-    return true;
-  }
-  return false;
 }
 
 /**

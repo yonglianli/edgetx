@@ -7,30 +7,52 @@ INCLUDE definitions.ld
 /* Define output sections */
 SECTIONS
 {
-  /* The startup code goes first into FLASH */
-
-  /* The program code and other data goes into FLASH */
-  .text :
+  .bootloader :
   {
     FILL(0xFFFF)
-      
-    CREATE_OBJECT_SYMBOLS
-
-    /* Bootloader code */
     KEEP(*(.bootloader))
-      
-    . = BOOTLOADER_SIZE; /* Set the start of the main program */
-    _stext = .;          /* Provide the name for the start of this section */
+    . = BOOTLOADER_SIZE;
+  } > REGION_BOOTLOADER
+
+  /* Used only with H7 */
+  .firmware_header (READONLY) :
+  {
+    KEEP(*(.fwdescription))
+  } > REGION_TEXT AT> REGION_TEXT_STORAGE
+  
+  /* ISR vector to be loaded */
+  .isr_vector :
+  {
+    . = ALIGN(4);
+    _sisr_vector = .;
+    KEEP(*(.isr_vector))
 
     . = ALIGN(4);
-    KEEP(*(.isr_vector)) /* Startup code */
+    _eisr_vector = .;
+  } > REGION_ISR_VECT AT> REGION_TEXT_STORAGE
+
+  _isr_load = LOADADDR(.isr_vector);
+
+  /* Main code section */
+  .text (READONLY) :
+  {
+    FILL(0xFFFF)
+    CREATE_OBJECT_SYMBOLS
+
+    _stext = .;
     KEEP(*(.fwversiondata))
 
     INCLUDE common_text.ld
 
     . = ALIGN(4);
-    _etext = .;   /* define a global symbols at end of code */
-  } > FLASH
+    _etext = .;
+  } > REGION_TEXT AT> REGION_TEXT_STORAGE
+
+  _text_load = LOADADDR(.text);
 
   INCLUDE common_sections.ld
+
+  .text_end_section : {} > REGION_TEXT AT > REGION_TEXT_STORAGE
+  _firmware_length = LOADADDR(.text_end_section) - LOADADDR(.firmware_header);
+  _firmware_version = _text_load;
 }

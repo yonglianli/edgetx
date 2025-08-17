@@ -2,10 +2,6 @@
 # https://cmake.org/cmake/help/latest/policy/CMP0020.html
 cmake_policy(SET CMP0020 NEW)
 
-# Allow keyword and plain target_link_libraries() signatures to be mixed
-# https://cmake.org/cmake/help/latest/policy/CMP0023.html
-cmake_policy(SET CMP0023 OLD)
-
 # Use @rpath in a target's install name on MacOS X for locating shared libraries
 # https://cmake.org/cmake/help/latest/policy/CMP0042.html
 if(POLICY CMP0042)
@@ -32,6 +28,7 @@ endif()
 
 set(CMAKE_COLOR_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 17)
 
 add_definitions(-D_GLIBCXX_USE_C99=1) # proper to_string definition
 
@@ -41,7 +38,6 @@ set(COMPANION_SRC_DIRECTORY ${PROJECT_SOURCE_DIR}/companion/src)
 set(SIMU_SRC_DIRECTORY ${COMPANION_SRC_DIRECTORY}/simulation)
 set(TOOLS_DIR ${PROJECT_SOURCE_DIR}/tools)
 set(UTILS_DIR ${PROJECT_SOURCE_DIR}/radio/util)
-set(LIBOPENUI_TOOLS_DIR ${RADIO_SRC_DIR}/thirdparty/libopenui/tools)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
@@ -54,10 +50,14 @@ include(Macros)
 git_id(GIT_STR)
 
 # Python check
-find_package(PythonInterp 3 REQUIRED)
-if(PYTHONINTERP_FOUND)
-  message(STATUS "Python found, version: ${PYTHON_VERSION_STRING}")
-  get_filename_component(PYTHON_DIRECTORY ${PYTHON_EXECUTABLE} DIRECTORY)
+set(Python3_FIND_VIRTUALENV FIRST)
+set(Python3_FIND_STRATEGY LOCATION)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+if(Python3_Interpreter_FOUND)
+  message(STATUS "Python found, version: ${Python3_VERSION}")
+  cmake_path(NATIVE_PATH Python3_EXECUTABLE PYTHON_EXECUTABLE)
 else()
   message(WARNING "Python not found! Most firmware and simu flavors not buildable.")
   set(LUA NO)

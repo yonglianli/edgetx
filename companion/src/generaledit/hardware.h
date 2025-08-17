@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,6 +27,9 @@ class CompoundItemModelFactory;
 class FilteredItemModelFactory;
 class QGridLayout;
 class AutoComboBox;
+class ExclusiveComboGroup;
+
+class AutoCheckBox;
 
 class HardwarePanel : public GeneralPanel
 {
@@ -37,6 +41,7 @@ class HardwarePanel : public GeneralPanel
 
   signals:
     void internalModuleChanged();
+    void InputFlexTypeChanged();
 
   private slots:
     void on_internalModuleChanged();
@@ -55,15 +60,17 @@ class HardwarePanel : public GeneralPanel
     AutoComboBox *antennaMode;
     QList<QWidget *> *params;
     int row;
+    ExclusiveComboGroup *exclFlexSwitchesGroup;
+    std::vector<AutoCheckBox*> invertToggles;
 
     void addStick(int index);
-    void addPot(int index);
-    void addSlider(int index);
+    void addFlex(int index);
     void addSwitch(int index);
     void addLabel(QString text);
     void addLine();
     void addParams();
     void addSection(QString text);
 
+    void setFlexTypeModel(AutoComboBox * cb, int index);
     void updateSerialPortUSBVCP();
 };

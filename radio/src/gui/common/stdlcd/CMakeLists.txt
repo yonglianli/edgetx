@@ -1,5 +1,3 @@
-add_definitions(-DGRAPHICS)
-
 set(GUI_SRC
   ${GUI_SRC}
   ../common/stdlcd/menus.cpp
@@ -18,6 +16,7 @@ set(GUI_SRC
   ../common/stdlcd/view_telemetry.cpp
   ../common/stdlcd/calibration.cpp
   ../common/stdlcd/splash.cpp
+  ../common/stdlcd/radio_sdmanager.cpp
   model_curve_edit.cpp
   )
 
@@ -27,13 +26,6 @@ endif()
 
 if(HELI)
   set(GUI_SRC ${GUI_SRC} ../common/stdlcd/model_heli.cpp)
-endif()
-
-if(SDCARD)
-  set(GUI_SRC
-    ${GUI_SRC}
-    ../common/stdlcd/radio_sdmanager.cpp
-    )
 endif()
 
 if(PXX2)

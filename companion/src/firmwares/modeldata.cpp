@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -27,6 +28,8 @@
 #include "helpers.h"
 #include "adjustmentreference.h"
 #include "compounditemmodels.h"
+
+#include <QMessageBox>
 
 ModelData::ModelData()
 {
@@ -192,7 +195,7 @@ bool ModelData::isEmpty() const
 
 void ModelData::setDefaultInputs(const GeneralSettings & settings)
 {
-  for (int i = 0; i < CPN_MAX_STICKS; i++) {
+  for (int i = 0; i < Boards::getCapability(getCurrentBoard(), Board::Sticks); i++) {
     ExpoData * expo = &expoData[i];
     expo->chn = i;
     expo->mode = INPUT_MODE_BOTH;
@@ -206,11 +209,11 @@ void ModelData::setDefaultMixes(const GeneralSettings & settings)
 {
   setDefaultInputs(settings);
 
-  for (int i = 0; i < CPN_MAX_STICKS; i++) {
+  for (int i = 0; i < Boards::getCapability(getCurrentBoard(), Board::Sticks); i++) {
     MixData * mix = &mixData[i];
     mix->destCh = i + 1;
     mix->weight = 100;
-    mix->srcRaw = RawSource(SOURCE_TYPE_VIRTUAL_INPUT, i);
+    mix->srcRaw = RawSource(SOURCE_TYPE_VIRTUAL_INPUT, i + 1);
   }
 }
 
@@ -220,8 +223,13 @@ void ModelData::setDefaultFunctionSwitches(int functionSwitchCount)
     return;
 
   for (int i = 0; i < functionSwitchCount; i++) {
-    setFuncSwitchConfig(i, Board::SWITCH_2POS);
-    setFuncSwitchGroup(i, 1);
+    customSwitches[i].type = Board::SWITCH_GLOBAL;
+    customSwitches[i].group = 0;
+    customSwitches[i].start = ModelData::FUNC_SWITCH_START_PREVIOUS;
+    customSwitches[i].state = 0;
+    customSwitches[i].name[0] = 0;
+    customSwitches[i].onColor.setColor(255, 255, 255);
+    customSwitches[i].offColor.setColor(0, 0, 0);
   }
 }
 
@@ -386,26 +394,27 @@ int ModelData::getChannelsMax(bool forceExtendedLimits) const
     return 100;
 }
 
-bool ModelData::isFunctionSwitchPositionAvailable(int index) const
- {
-   if (index == 0)
-     return true;
+bool ModelData::isFunctionSwitchPositionAvailable(int swIndex, int swPos, const GeneralSettings * const gs) const
+{
+  if (swPos == 1)
+    return false;
 
-   div_t qr = div(abs(index) - 1, 3);
-   int fs = getFuncSwitchConfig(qr.quot);
+  int fsindex = Boards::getCFSIndexForSwitch(swIndex);
+  int fs = getFuncSwitchConfig(fsindex);
 
-   if (qr.rem == 1) {
-     return false;
-   }
-   else {
-     return fs != Board::SWITCH_NOT_AVAILABLE;
-   }
- }
+  if (fs == Board::SWITCH_GLOBAL)
+    return gs->switchConfig[swIndex].type != Board::SWITCH_NOT_AVAILABLE;
 
- bool ModelData::isFunctionSwitchSourceAllowed(int index) const
- {
-   return (int)getFuncSwitchConfig(index) != Board::SWITCH_NOT_AVAILABLE;
- }
+  return true;
+}
+
+bool ModelData::isFunctionSwitchSourceAllowed(int index) const
+{
+  if (index >= 0 && index < Boards::getCapability(getCurrentBoard(), Board::FunctionSwitches))
+    return (int)getFuncSwitchConfig(index) != Board::SWITCH_NOT_AVAILABLE;
+
+  return false;
+}
 
 
 bool ModelData::isAvailable(const RawSwitch & swtch) const
@@ -420,9 +429,6 @@ bool ModelData::isAvailable(const RawSwitch & swtch) const
   }
   else if (swtch.type == SWITCH_TYPE_SENSOR) {
     return strlen(sensorData[index].label) > 0;
-  }
-  else if (swtch.type == SWITCH_TYPE_FUNCTIONSWITCH) {
-     return isFunctionSwitchPositionAvailable(index + 1);
   }
   else {
     return true;
@@ -446,7 +452,7 @@ void ModelData::convert(RadioDataConversionState & cstate)
   cstate.setComponent("Settings", 0);
   if (thrTraceSrc && (int)thrTraceSrc < cstate.fromBoard.getCapability(Board::Pots) + cstate.fromBoard.getCapability(Board::Sliders)) {
     cstate.setSubComp(tr("Throttle Source"));
-    thrTraceSrc = RawSource(SOURCE_TYPE_STICK, (int)thrTraceSrc + 3).convert(cstate).index - 3;
+    thrTraceSrc = RawSource(SOURCE_TYPE_INPUT, (int)thrTraceSrc + 3).convert(cstate).index - 3;
   }
 
   Firmware *fw = getCurrentFirmware();
@@ -603,12 +609,8 @@ int ModelData::updateReference()
       updRefInfo.occurences = 3;
       break;
     case REF_UPD_TYPE_TIMER:
-      updRefInfo.srcType = SOURCE_TYPE_SPECIAL;
+      updRefInfo.srcType = SOURCE_TYPE_TIMER;
       updRefInfo.maxindex = fw->getCapability(Timers);
-      //  rawsource index offset    TODO refactor timers so be own category
-      updRefInfo.index1 += 2;
-      updRefInfo.index2 += 2;
-      updRefInfo.maxindex += 2;
       break;
     default:
       qDebug() << "Error - unhandled reference type:" << updRefInfo.type;
@@ -771,7 +773,7 @@ int ModelData::updateReference()
       if (!cfd->isEmpty()) {
         updateSwitchRef(cfd->swtch);
         if (cfd->func == FuncVolume || cfd->func == FuncBacklight || cfd->func == FuncPlayValue ||
-            (cfd->func >= FuncAdjustGV1 && cfd->func <= FuncAdjustGVLast && (cfd->adjustMode == FUNC_ADJUST_GVAR_GVAR || cfd->adjustMode == FUNC_ADJUST_GVAR_SOURCE))) {
+            (cfd->func >= FuncAdjustGV1 && cfd->func <= FuncAdjustGVLast && (cfd->adjustMode == FUNC_ADJUST_GVAR_GVAR || cfd->adjustMode == FUNC_ADJUST_GVAR_SOURCE || cfd->adjustMode == FUNC_ADJUST_GVAR_SOURCERAW))) {
           updateSourceIntRef(cfd->param);
           if (cfd->param == 0)
             cfd->clear();
@@ -966,7 +968,7 @@ void ModelData::updateTypeValueRef(R & curRef, const T type, const int idxAdj, c
 
       newRef.value += updRefInfo.shift;
 
-      if (newRef.value < (updRefInfo.index1 + idxAdj) || newRef.value > (updRefInfo.maxindex + idxAdj)) {
+      if ((newRef.value < (updRefInfo.index1 + idxAdj)) || (newRef.value > (updRefInfo.maxindex + idxAdj))) {
         if (defClear)
           newRef.clear();
         else {
@@ -1030,7 +1032,7 @@ void ModelData::updateAssignFunc(CustomFunctionData * cfd)
   switch (updRefInfo.type)
   {
     case REF_UPD_TYPE_CHANNEL:
-      if(cfd->func < FuncOverrideCH1 || cfd->func > FuncOverrideCH32) //  TODO refactor to FuncOverrideCHLast
+      if(cfd->func < FuncOverrideCH1 || cfd->func > FuncOverrideCHLast)
         return;
       idxAdj = FuncOverrideCH1;
       break;
@@ -1040,9 +1042,9 @@ void ModelData::updateAssignFunc(CustomFunctionData * cfd)
       idxAdj = FuncAdjustGV1;
       break;
     case REF_UPD_TYPE_TIMER:
-      if (cfd->func < FuncSetTimer1 || cfd->func > FuncSetTimer3) //  TODO refactor to FuncSetTimerLast
+      if (cfd->func < FuncSetTimer1 || cfd->func > FuncSetTimerLast)
         return;
-      idxAdj = FuncSetTimer1 - 2;   //  reverse earlier offset required for rawsource
+      idxAdj = FuncSetTimer1;
       break;
     default:
       return;
@@ -1428,6 +1430,48 @@ void ModelData::sortMixes()
   memcpy(&mixData[0], &sortedMixData[0], CPN_MAX_MIXERS * sizeof(MixData));
 }
 
+void ModelData::sortInputs()
+{
+  unsigned int lastchn = 0;
+  bool sortreq = false;
+
+  for (int i = 0; i < CPN_MAX_EXPOS; i++) {
+    ExpoData *ed = &expoData[i];
+    if (!ed->isEmpty()) {
+      if (ed->chn < lastchn) {
+        sortreq = true;
+        break;
+      }
+      else
+        lastchn = ed->chn;
+    }
+  }
+
+  if (!sortreq)
+    return;
+
+  //  QMap automatically sorts based on key
+  QMap<int, int> map;
+  for (int i = 0; i < CPN_MAX_EXPOS; i++) {
+    ExpoData *ed = &expoData[i];
+    if (!ed->isEmpty()) {
+      //  chn may not be unique so build a compound sort key
+      map.insert(ed->chn * (CPN_MAX_EXPOS + 1) + i, i);
+    }
+  }
+
+  ExpoData sortedExpoData[CPN_MAX_EXPOS];
+  int destidx = 0;
+
+  QMap<int, int>::const_iterator i;
+  for (i = map.constBegin(); i != map.constEnd(); ++i) {
+    memcpy(&sortedExpoData[destidx], &expoData[i.value()], sizeof(ExpoData));
+    destidx++;
+  }
+
+  memcpy(&expoData[0], &sortedExpoData[0], CPN_MAX_EXPOS * sizeof(ExpoData));
+}
+
 void ModelData::updateResetParam(CustomFunctionData * cfd)
 {
   if (cfd->func != FuncReset)
@@ -1495,41 +1539,43 @@ void ModelData::updateResetParam(CustomFunctionData * cfd)
 
 QString ModelData::thrTraceSrcToString() const
 {
-  return thrTraceSrcToString((int)thrTraceSrc);
+  return thrTraceSrcToString(nullptr, (int)thrTraceSrc);
 }
 
-QString ModelData::thrTraceSrcToString(const int index) const
+QString ModelData::thrTraceSrcToString(const GeneralSettings * generalSettings, const int index) const
 {
-  Firmware * firmware = getCurrentFirmware();
-  const Boards board = Boards(getCurrentBoard());
-  const int pscnt = board.getCapability(Board::Pots) + board.getCapability(Board::Sliders);
+  const Board::Type board = getCurrentBoard();
+  const int pscnt = Boards::getCapability(board, Board::Pots) + Boards::getCapability(board, Board::Sliders);
 
   if (index == 0)
-    return tr("THR");
+    return Boards::getCapability(board, Board::Air) ? tr("THR") : tr("TH");
   else if (index <= pscnt)
-    return board.getAnalogInputName(index + board.getCapability(Board::Sticks) - 1);
-  else if (index <= pscnt + firmware->getCapability(Outputs))
-    return RawSource(SOURCE_TYPE_CH, index - pscnt - 1).toString(this);
+    //return Boards::getInputName(index + Boards::getCapability(board, Board::Sticks) - 1, board);
+    return RawSource(SOURCE_TYPE_INPUT, index + Boards::getCapability(board, Board::Sticks)).toString(this, generalSettings, board);
+  else if (index <= pscnt + getCurrentFirmware()->getCapability(Outputs))
+    return RawSource(SOURCE_TYPE_CH, index - pscnt).toString(this);
 
   return QString(CPN_STR_UNKNOWN_ITEM);
 }
 
 int ModelData::thrTraceSrcCount() const
 {
-  const Boards board = Boards(getCurrentBoard());
   Firmware * firmware = getCurrentFirmware();
+  const Board::Type board = firmware->getBoard();
 
-  return 1 + board.getCapability(Board::Pots) + board.getCapability(Board::Sliders) + firmware->getCapability(Outputs);
+  return 1 + Boards::getCapability(board, Board::Pots) + Boards::getCapability(board, Board::Sliders) + firmware->getCapability(Outputs);
 }
 
 bool ModelData::isThrTraceSrcAvailable(const GeneralSettings * generalSettings, const int index) const
 {
-  const Boards board = Boards(getCurrentBoard());
+  const Board::Type board = getCurrentBoard();
 
-  if (index > 0 && index <= board.getCapability(Board::Pots) + board.getCapability(Board::Sliders))
-    return RawSource(SOURCE_TYPE_STICK, index + board.getCapability(Board::Sticks) - 1).isAvailable(this, generalSettings, board.getBoardType());
-  else
+  if (index == 0)
     return true;
+  else if (index > 0 && index <= Boards::getCapability(board, Board::Pots) + Boards::getCapability(board, Board::Sliders))
+    return RawSource(SOURCE_TYPE_INPUT, index + Boards::getCapability(board, Board::Sticks)).isAvailable(this, generalSettings, board);
+  else
+    return hasMixes(index - Boards::getCapability(board, Board::Pots) - Boards::getCapability(board, Board::Sliders) - 1);
 }
 
 void ModelData::limitsClear(const int index)
@@ -1635,6 +1681,8 @@ QString ModelData::trainerModeToString(int value)
       return tr("Slave/Bluetooth");
     case TRAINER_MODE_MULTI:
       return tr("Master/Multi");
+    case TRAINER_MODE_CRSF:
+      return tr("Master/CRSF");
     default:
       return CPN_STR_UNKNOWN_ITEM;
   }
@@ -1650,6 +1698,16 @@ bool ModelData::isTrainerModeAvailable(const GeneralSettings & generalSettings, 
   if (value == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE &&
       IS_TARANIS_X9E(board) &&
       generalSettings.bluetoothMode)
+    return false;
+
+  if (value == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE &&
+      !Boards::getCapability(board, Board::HasTrainerModuleSBUS))
+    return false;
+
+  if ((value == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE || value == TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE) &&
+      (Boards::getCapability(board, Board::HasTrainerModuleCPPM) ||
+       Boards::getCapability(board, Board::HasTrainerModuleSBUS)) &&
+      moduleData[1].protocol != PULSES_OFF)
     return false;
 
   if (value == TRAINER_MODE_MASTER_SERIAL &&
@@ -1668,16 +1726,6 @@ bool ModelData::isTrainerModeAvailable(const GeneralSettings & generalSettings, 
 
   if (value == TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE &&
       !Boards::getCapability(board, Board::HasTrainerModuleCPPM))
-    return false;
-
-  if (value == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE &&
-      !Boards::getCapability(board, Board::HasTrainerModuleSBUS))
-    return false;
-
-  if ((value == TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE || value == TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE) &&
-      (Boards::getCapability(board, Board::HasTrainerModuleCPPM) ||
-       Boards::getCapability(board, Board::HasTrainerModuleSBUS)) &&
-      moduleData[1].protocol != PULSES_OFF)
     return false;
 
   if (value == TRAINER_MODE_MULTI &&
@@ -1702,106 +1750,195 @@ AbstractStaticItemModel * ModelData::trainerModeItemModel(const GeneralSettings 
   return mdl;
 }
 
+Board::SwitchType ModelData::getFuncSwitchConfig(unsigned int index) const
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    return customSwitches[index].type;
+  else
+    return Board::SWITCH_NOT_AVAILABLE;
+}
 
- unsigned int ModelData::getFuncSwitchConfig(unsigned int index) const
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES)
-     return Helpers::getBitmappedValue(functionSwitchConfig, index, 2);
-   else
-     return FUNC_SWITCH_CONFIG_NONE;
- }
+void ModelData::setFuncSwitchConfig(unsigned int index, Board::SwitchType value)
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    customSwitches[index].type = value;
+}
 
- void ModelData::setFuncSwitchConfig(unsigned int index, unsigned int value)
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES)
-     Helpers::setBitmappedValue(functionSwitchConfig, value, index, 2);
- }
+//  static
+QString ModelData::funcSwitchConfigToString(unsigned int value)
+{
+  switch (value) {
+    case Board::SWITCH_NOT_AVAILABLE:
+      return tr("NONE");
+    case Board::SWITCH_TOGGLE:
+      return tr("TOGGLE");
+    case Board::SWITCH_2POS:
+      return tr("2POS");
+    case Board::SWITCH_GLOBAL:
+      return tr("Global");
+    default:
+      return CPN_STR_UNKNOWN_ITEM;
+  }
+}
 
- //  static
- QString ModelData::funcSwitchConfigToString(unsigned int value)
- {
-   switch (value) {
-     case FUNC_SWITCH_CONFIG_NONE:
-       return tr("NONE");
-     case FUNC_SWITCH_CONFIG_TOGGLE:
-       return tr("TOGGLE");
-     case FUNC_SWITCH_CONFIG_2POS:
-       return tr("2POS");
-     default:
-       return CPN_STR_UNKNOWN_ITEM;
-   }
- }
+//  static
+AbstractStaticItemModel * ModelData::funcSwitchConfigItemModel()
+{
+  AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+  mdl->setName(AIM_MODELDATA_FUNCSWITCHCONFIG);
+    for (unsigned int i = Board::SWITCH_NOT_AVAILABLE; i <= Board::SWITCH_GLOBAL; i++) {
+      mdl->appendToItemList(funcSwitchConfigToString(i), i);
+  }
+  mdl->loadItemList();
+  return mdl;
+}
 
- //  static
- AbstractStaticItemModel * ModelData::funcSwitchConfigItemModel()
- {
-   AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
-   mdl->setName(AIM_MODELDATA_FUNCSWITCHCONFIG);
+AbstractStaticItemModel * ModelData::funcSwitchGroupStartSwitchModel(int switchcnt)
+{
+  AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+  mdl->setName(AIM_MODELDATA_FUNCSWITCHGROUPSTARTSWITCH);
 
-   for (unsigned int i = FUNC_SWITCH_CONFIG_FIRST; i <= FUNC_SWITCH_CONFIG_LAST; i++) {
-     mdl->appendToItemList(funcSwitchConfigToString(i), i);
-   }
+  mdl->appendToItemList(tr("Restore"), 0);
+  for (int i = 1; i <= switchcnt; i += 1) {
+    mdl->appendToItemList(tr("SW") + QString::number(i), i);
+  }
+  mdl->appendToItemList(tr("Off"), switchcnt + 1);
 
-   mdl->loadItemList();
-   return mdl;
- }
+  mdl->loadItemList();
+  return mdl;
+}
 
- unsigned int ModelData::getFuncSwitchGroup(unsigned int index) const
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES)
-     return Helpers::getBitmappedValue(functionSwitchGroup, index, 2);
-   else
-     return 0;
- }
+AbstractStaticItemModel * ModelData::funcSwitchGroupsModel()
+{
+  AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+  mdl->setName(AIM_MODELDATA_FUNCSWITCHGROUPS);
 
- void ModelData::setFuncSwitchGroup(unsigned int index, unsigned int value)
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES)
-     Helpers::setBitmappedValue(functionSwitchGroup, value, index, 2);
- }
+  mdl->appendToItemList(tr("---"), 0);
+  for (unsigned int i = 1; i <= Boards::getCapability(getCurrentBoard(), Board::FunctionSwitchGroups); i += 1) {
+    mdl->appendToItemList(tr("Group ") + QString::number(i), i);
+  }
 
- unsigned int ModelData::getFuncSwitchAlwaysOnGroup(unsigned int index) const
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES) {
-     unsigned int grp = getFuncSwitchGroup(index);
-     unsigned int switchcnt = Boards::getCapability(getCurrentFirmware()->getBoard(), Board::FunctionSwitches);
-     return Helpers::getBitmappedValue(functionSwitchGroup, grp, 1, 2 * switchcnt);
-   }
-   else
-     return 0;
- }
+  mdl->loadItemList();
+  return mdl;
+}
 
- void ModelData::setFuncSwitchAlwaysOnGroup(unsigned int index, unsigned int value)
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES) {
-     unsigned int grp = getFuncSwitchGroup(index);
-     unsigned int switchcnt = Boards::getCapability(getCurrentFirmware()->getBoard(), Board::FunctionSwitches);
-     Helpers::setBitmappedValue(functionSwitchGroup, value, grp, 1, 2 * switchcnt);
-   }
- }
+unsigned int ModelData::getFuncSwitchGroup(unsigned int index) const
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    return customSwitches[index].group;
+  else
+    return 0;
+}
 
- unsigned int ModelData::getFuncSwitchStart(unsigned int index) const
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES)
-     return Helpers::getBitmappedValue(functionSwitchStartConfig, index, 2);
-   else
-     return FUNC_SWITCH_START_INACTIVE;
- }
+void ModelData::setFuncSwitchGroup(unsigned int index, unsigned int value)
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    customSwitches[index].group = value;
+}
 
- void ModelData::setFuncSwitchStart(unsigned int index, unsigned int value)
- {
-   if (index < CPN_MAX_FUNCTION_SWITCHES)
-     Helpers::setBitmappedValue(functionSwitchStartConfig, value, index, 2);
- }
+unsigned int ModelData::getFuncSwitchAlwaysOnGroup(unsigned int group) const
+{
+  if (group > 0 && group <= Boards::getCapability(getCurrentBoard(), Board::FunctionSwitchGroups)) {
+    return cfsGroupOn[group];
+  }
+  else
+    return 0;
+}
+
+unsigned int ModelData::getFuncSwitchAlwaysOnGroupForSwitch(unsigned int index) const
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    return getFuncSwitchAlwaysOnGroup(getFuncSwitchGroup(index));
+  else
+    return 0;
+}
+
+void ModelData::setFuncSwitchAlwaysOnGroup(unsigned int group, unsigned int value)
+{
+  if (group > 0 && group <= Boards::getCapability(getCurrentBoard(), Board::FunctionSwitchGroups)) {
+    cfsGroupOn[group] = value;
+  }
+}
+
+unsigned int ModelData::getFuncSwitchStart(unsigned int index) const
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    return customSwitches[index].start;
+  else
+    return FUNC_SWITCH_START_OFF;
+}
+
+void ModelData::setFuncSwitchStart(unsigned int index, unsigned int value)
+{
+  if (index < CPN_MAX_SWITCHES_FUNCTION)
+    customSwitches[index].start = value;
+}
+
+int ModelData::getFuncGroupSwitchCount(unsigned int group, int switchcnt) const
+{
+  int grpSwitchCount = 0;
+  for (int i = 0; i < switchcnt; i += 1) {
+    if (getFuncSwitchGroup(i) == group) {
+      grpSwitchCount += 1;
+    }
+  }
+  return grpSwitchCount;
+}
+
+unsigned int ModelData::getFuncGroupSwitchStart(unsigned int group, int switchcnt) const
+{
+  bool allDown = true;
+  for (int i = 0; i < switchcnt; i += 1) {
+    if (getFuncSwitchGroup(i) == group) {
+      if (getFuncSwitchStart(i) == FUNC_SWITCH_START_ON)
+        return i + 1;
+      if (getFuncSwitchStart(i) != FUNC_SWITCH_START_OFF)
+        allDown = false;
+    }
+  }
+  if (allDown && getFuncGroupSwitchCount(group, switchcnt) > 0) return switchcnt + 1;
+  return 0;
+}
+
+void ModelData::setFuncGroupSwitchStart(unsigned int group, unsigned int value, int switchcnt)
+{
+  for (int i = 0; i < switchcnt; i += 1) {
+    if (getFuncSwitchGroup(i) == group)
+      setFuncSwitchStart(i, value ? ModelData::FUNC_SWITCH_START_OFF : ModelData::FUNC_SWITCH_START_PREVIOUS);
+  }
+  if (value > 0 && value <= (unsigned int)switchcnt) {
+    setFuncSwitchStart(value - 1, ModelData::FUNC_SWITCH_START_ON);
+  }
+}
+
+void ModelData::setGroupSwitchState(uint8_t group, int switchcnt)
+{
+  // Check rules for always on group
+  //  - Toggle switch type not valid, change all switches to 2POS
+  //  - One switch must be turned on, turn on first switch if needed
+  if (getFuncSwitchAlwaysOnGroup(group)) {
+    for (int j = 0; j < switchcnt; j += 1) {
+      if (getFuncSwitchGroup(j) == group) {
+        setFuncSwitchConfig(j, Board::SWITCH_2POS); // Toggle not valid
+      }
+    }
+    if (getFuncGroupSwitchStart(group, switchcnt) == (unsigned int)switchcnt + 1) {
+      // Start state for all switches is off - set all to 'last'
+      for (int j = 0; j < switchcnt; j += 1)
+        if (getFuncSwitchGroup(j) == group)
+          setFuncSwitchStart(j, FUNC_SWITCH_START_PREVIOUS);
+    }
+  }
+}
 
  //  static
  QString ModelData::funcSwitchStartToString(unsigned int value)
  {
    switch (value) {
-     case FUNC_SWITCH_START_INACTIVE:
-       return tr("Inactive");
-     case FUNC_SWITCH_START_ACTIVE:
-       return tr("Active");
+     case FUNC_SWITCH_START_OFF:
+       return tr("Off");
+     case FUNC_SWITCH_START_ON:
+       return tr("On");
      case FUNC_SWITCH_START_PREVIOUS:
        return tr("Restore");
      default:
@@ -1833,4 +1970,75 @@ int ModelData::getCustomScreensCount() const
   }
 
   return cnt;
+}
+
+void ModelData::validate()
+{
+  modelErrors = false;
+
+  for (int i = 0; i < CPN_MAX_INPUTS; i++) {
+    if (!expoData[i].isEmpty() && expoData[i].srcRaw == SOURCE_TYPE_NONE) {
+      modelErrors = true;
+      return;
+    }
+  }
+
+  for (int i = 0; i < CPN_MAX_MIXERS; i++) {
+    if (!mixData[i].isEmpty() && mixData[i].srcRaw == SOURCE_TYPE_NONE) {
+      modelErrors = true;
+      return;
+    }
+  }
+}
+
+QStringList ModelData::errorsList()
+{
+  QStringList list;
+
+  for (int i = 0; i < CPN_MAX_INPUTS; i++) {
+    if (!expoData[i].isEmpty() && expoData[i].srcRaw == SOURCE_TYPE_NONE)
+      list.append(tr("Error - Input %1 Line %2 %3").arg(expoData[i].chn + 1).arg(getInputLine(i)).arg(tr("has no source")));
+  }
+
+  for (int i = 0; i < CPN_MAX_MIXERS; i++) {
+    if (!mixData[i].isEmpty() && mixData[i].srcRaw == SOURCE_TYPE_NONE)
+      list.append(tr("Error - Mix %1 Line %2 %3").arg(mixData[i].destCh).arg(getMixLine(i)).arg(tr("has no source")));
+  }
+
+  return list;
+}
+
+int ModelData::getMixLine(int index) const
+{
+  int cnt = 1;
+
+  for (int i = index - 1; i >= 0 && mixData[i].destCh == mixData[index].destCh; i--)
+    cnt++;
+
+  return cnt;
+}
+
+int ModelData::getInputLine(int index) const
+{
+  int cnt = 1;
+
+  for (int i = 0; i < index; i++) {
+    if (expoData[i].chn == expoData[index].chn)
+      cnt++;
+  }
+
+  return cnt;
+}
+
+const Board::SwitchType ModelData::getSwitchType(int sw, const GeneralSettings & gs) const
+{
+  if (sw < 0 || sw >= Boards::getCapability(getCurrentBoard(), Board::Switches))
+    return Board::SWITCH_NOT_AVAILABLE;
+
+  if (Boards::isSwitchFunc(sw)) {
+    int fsIndex = Boards::getCFSIndexForSwitch(sw);
+    if (customSwitches[fsIndex].type != Board::SWITCH_GLOBAL)
+      return customSwitches[fsIndex].type;
+  }
+  return gs.switchConfig[sw].type;
 }

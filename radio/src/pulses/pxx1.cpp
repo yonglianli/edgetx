@@ -27,7 +27,7 @@
 #include "pxx1_transport.h"
 #include "pxx1.h"
 
-#include "opentx.h"
+#include "edgetx.h"
 
 static uint32_t _pxx1_internal_baudrate = PXX1_DEFAULT_SERIAL_BAUDRATE;
 
@@ -405,7 +405,7 @@ static void pxx1ProcessData(void* ctx, uint8_t data, uint8_t* buffer, uint8_t* l
   auto mod_st = (etx_module_state_t*)ctx;
   auto module = modulePortGetModule(mod_st);
 
-  processFrskySportTelemetryData(module, data, buffer, *len);
+  processFrskySportTelemetryData(module, data, buffer, len);
 }
 
 const etx_proto_driver_t Pxx1Driver = {

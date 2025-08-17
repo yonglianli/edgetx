@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,69 +19,11 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _OPENTXINTERFACE_H_
-#define _OPENTXINTERFACE_H_
+#pragma once
 
 #include "eeprominterface.h"
 
 #include <QtCore>
-
-class RleFile;
-class OpenTxFirmware;
-
-class OpenTxEepromInterface : public EEPROMInterface
-{
-  Q_DECLARE_TR_FUNCTIONS(OpenTxEepromInterface)
-
-  public:
-
-    OpenTxEepromInterface(OpenTxFirmware * firmware);
-
-    virtual ~OpenTxEepromInterface();
-
-    virtual unsigned long load(RadioData &, const uint8_t * eeprom, int size);
-
-    bool loadModelFromBackup(ModelData & model, const uint8_t * data, unsigned int size, uint8_t version, uint32_t variant);
-
-    virtual unsigned long loadBackup(RadioData &, const uint8_t * eeprom, int esize, int index);
-
-    virtual int save(uint8_t * eeprom, const RadioData & radioData, uint8_t version=0, uint32_t variant=0);
-
-    virtual int getSize(const ModelData &);
-
-    virtual int getSize(const GeneralSettings &);
-
-  protected:
-
-    const char * getName();
-
-    EepromLoadErrors checkVersion(unsigned int version);
-
-    bool checkVariant(unsigned int version, unsigned int variant);
-
-    template <class T, class M>
-    bool loadFromByteArray(T & dest, const QByteArray & data, uint8_t version, uint32_t variant=0);
-
-  public:
-    template <class T, class M>
-    bool loadFromByteArray(T & dest, const QByteArray & data);
-
-    template <class T, class M>
-    bool saveToByteArray(const T & src, QByteArray & data, uint8_t version=0);
-
-    bool loadRadioSettingsFromRLE(GeneralSettings & settings, RleFile * rleFile, uint8_t version);
-
-    bool loadModelFromRLE(ModelData & model, RleFile * rleFile, unsigned int index, uint8_t version, uint32_t variant);
-
-    void showErrors(const QString & title, const QStringList & errors);
-
-    uint8_t getLastDataVersion(Board::Type board);
-
-    RleFile * efile;
-
-    OpenTxFirmware * firmware;
-
-};
 
 class OpenTxFirmware: public Firmware
 {
@@ -88,13 +31,14 @@ class OpenTxFirmware: public Firmware
 
   public:
     OpenTxFirmware(const QString & id, OpenTxFirmware * parent):
-      Firmware(parent, id, parent->getName(), parent->getBoard(), parent->getDownloadId(), parent->getSimulatorId())
+      Firmware(parent, id, parent->getName(), parent->getBoard(),
+               parent->getDownloadId(), parent->getSimulatorId(), parent->getHwDefnId())
     {
-      setEEpromInterface(parent->getEEpromInterface());
     }
 
-    OpenTxFirmware(const QString & id, const QString & name, const Board::Type board, const QString & downloadId = QString(), const QString & simulatorId = QString()):
-      Firmware(id, name, board, downloadId, simulatorId)
+    OpenTxFirmware(const QString & id, const QString & name, const Board::Type board,
+                   const QString & downloadId = QString(), const QString & simulatorId = QString(), const QString & hwdefnId = QString()):
+      Firmware(id, name, board, downloadId, simulatorId, hwdefnId)
     {
       //  Note: these align with the radio NOT computer locales - TODO harmonise with ISO and one list!!!
       addLanguage("en");
@@ -109,6 +53,7 @@ class OpenTxFirmware: public Firmware
       addLanguage("hu");
       addLanguage("it");
       addLanguage("jp");
+      addLanguage("ko");
       addLanguage("nl");
       addLanguage("pl");
       addLanguage("pt");
@@ -116,6 +61,7 @@ class OpenTxFirmware: public Firmware
       addLanguage("se");
       addLanguage("sk");
       addLanguage("tw");
+      addLanguage("ua");
     }
 
     virtual Firmware * getFirmwareVariant(const QString & id);
@@ -130,7 +76,11 @@ class OpenTxFirmware: public Firmware
 
     virtual QString getCapabilityStr(Capability);
 
-    virtual QString getAnalogInputName(unsigned int index);
+    virtual QString getAnalogInputName(unsigned int index)
+    {
+      qDebug() << "WARNING: Depreciate function called. Always returns empty string!";
+      return QString();
+    }
 
     virtual QTime getMaxTimerStart();
 
@@ -149,13 +99,3 @@ class OpenTxFirmware: public Firmware
 
 void registerOpenTxFirmwares();
 void unregisterOpenTxFirmwares();
-
-extern QList<OpenTxEepromInterface *> opentxEEpromInterfaces;
-
-OpenTxEepromInterface * loadModelFromByteArray(ModelData & model, const QByteArray & data);
-OpenTxEepromInterface * loadRadioSettingsFromByteArray(GeneralSettings & settings, const QByteArray & data);
-
-bool writeModelToByteArray(const ModelData & model, QByteArray & data);
-bool writeRadioSettingsToByteArray(const GeneralSettings & settings, QByteArray & data);
-
-#endif // _OPENTXINTERFACE_H_

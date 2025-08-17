@@ -19,13 +19,9 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 #if defined(PXX2)
-
-#if defined(LIBOPENUI)
-  #include "libopenui.h"
-#endif
 
 #include "pulses/pxx2.h"
 #include "pulses/pxx2_transport.h"
@@ -227,7 +223,7 @@ static void processReceiverSettingsFrame(uint8_t module, const uint8_t * frame)
   if (frame[4] & PXX2_RX_SETTINGS_FLAG1_SBUS24)
     destination->sbus24 = 1;
 
-  uint8_t outputsCount = min<uint8_t>(16, frame[0] - 4);
+  uint8_t outputsCount = min<uint8_t>(PXX2_MAX_CHANNELS, frame[0] - 4);
   destination->outputsCount = outputsCount;
   for (uint8_t pin = 0; pin < outputsCount; pin++) {
     destination->outputsMapping[pin] = frame[5 + pin];
@@ -416,8 +412,16 @@ static void processSpectrumAnalyserFrame(uint8_t module, const uint8_t * frame)
   if (x < LCD_W) {
     reusableBuffer.spectrumAnalyser.bars[x] = max<int>(0, -SPECTRUM_ANALYSER_POWER_FLOOR + power); // we remove everything below -120dB
 #if defined(COLORLCD)
-    if (reusableBuffer.spectrumAnalyser.bars[x] > reusableBuffer.spectrumAnalyser.max[x])
-      reusableBuffer.spectrumAnalyser.max[x] = reusableBuffer.spectrumAnalyser.bars[x];
+    if (reusableBuffer.spectrumAnalyser.bars[x] >
+        reusableBuffer.spectrumAnalyser.max[x]) {
+      reusableBuffer.spectrumAnalyser.max[x] =
+          reusableBuffer.spectrumAnalyser.bars[x];
+    }
+    if (reusableBuffer.spectrumAnalyser.bars[x] >
+        reusableBuffer.spectrumAnalyser.peak[x]) {
+      reusableBuffer.spectrumAnalyser.peak[x] =
+          reusableBuffer.spectrumAnalyser.bars[x];
+    }
 #endif
   }
 }

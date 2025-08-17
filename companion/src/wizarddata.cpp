@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -45,7 +46,8 @@ WizMix::WizMix(const GeneralSettings & settings, unsigned int modelId, const Mod
   vehicle(NOVEHICLE)
 {
   memset(name, 0, sizeof(name));
-  strncpy(name, originalModelData.name, sizeof(name)-1);
+  memcpy(name, originalModelData.name, sizeof(name) - 1);
+  name[sizeof(name) - 1] = '\0';
 }
 
 void WizMix::maxMixSwitch(char *name, MixData &mix, int channel, int sw, int weight)
@@ -54,7 +56,7 @@ void WizMix::maxMixSwitch(char *name, MixData &mix, int channel, int sw, int wei
   strncpy(mix.name, name, sizeof(mix.name)-1);
   mix.destCh = channel;
   mix.srcRaw = RawSource(SOURCE_TYPE_MAX);
-  mix.swtch  = RawSwitch(SWITCH_TYPE_SWITCH, sw);
+  mix.swtch  = RawSwitch(SWITCH_TYPE_SWITCH, sw + 1);
   mix.weight = weight;
 }
 
@@ -63,26 +65,19 @@ void WizMix::addMix(ModelData &model, Input input, int weight, int channel, int 
   if (input != NO_INPUT)  {
     if (input >= RUDDER_INPUT && input <= AILERONS_INPUT) {
       MixData & mix = model.mixData[mixIndex++];
-      mix.destCh = channel+1;
-      if (IS_SKY9X(getCurrentBoard())) {
-        mix.srcRaw = RawSource(SOURCE_TYPE_STICK, input-1);
-      }
-      else {
-        int channel = settings.getDefaultChannel(input-1);
-        mix.srcRaw = RawSource(SOURCE_TYPE_VIRTUAL_INPUT, channel);
-      }
-
+      mix.destCh = channel + 1;
+      mix.srcRaw = RawSource(SOURCE_TYPE_VIRTUAL_INPUT, settings.getDefaultChannel(input - 1) + 1);
       mix.weight = weight;
     }
     else if (input==FLAPS_INPUT){
       // There ought to be some kind of constants for switches somewhere...
-      maxMixSwitch((char *)"Flaps Up", model.mixData[mixIndex++], channel+1, IS_SKY9X(getCurrentBoard()) ? -SWITCH_ELE : SWITCH_SA0, weight); //Taranis-Horus SA-UP, 9X ELE-UP
-      maxMixSwitch((char *)"Flaps Dn", model.mixData[mixIndex++], channel+1, IS_SKY9X(getCurrentBoard()) ? SWITCH_ELE : SWITCH_SA2, -weight); //Taranis-Horus SA-DOWN, 9X ELE-DOWN
+      maxMixSwitch((char *)tr("FlapUp").toLatin1().data(), model.mixData[mixIndex++], channel+1, SWITCH_SA0 - 1, weight);
+      maxMixSwitch((char *)tr("FlapDn").toLatin1().data(), model.mixData[mixIndex++], channel+1, SWITCH_SA2 - 1, -weight);
 
     }
     else if (input==AIRBRAKES_INPUT){
-      maxMixSwitch((char *)"AirbkOff", model.mixData[mixIndex++], channel+1, IS_SKY9X(getCurrentBoard()) ? -SWITCH_RUD : SWITCH_SE0, -weight); //Taranis-Horus SE-UP, 9X RUD-UP
-      maxMixSwitch((char *)"AirbkOn",  model.mixData[mixIndex++], channel+1, IS_SKY9X(getCurrentBoard()) ? SWITCH_RUD : SWITCH_SE2, weight); //Tatanis-Horus SE-DOWN, 9X RUD-DOWN
+      maxMixSwitch((char *)tr("ArbkOf").toLatin1().data(), model.mixData[mixIndex++], channel+1, SWITCH_SE0 - 1, -weight);
+      maxMixSwitch((char *)tr("ArbkOn").toLatin1().data(),  model.mixData[mixIndex++], channel+1, SWITCH_SE2 - 1, weight);
     }
   }
 }
@@ -96,13 +91,14 @@ WizMix::operator ModelData()
   model.used = true;
   model.moduleData[0].modelId = modelId;
   model.setDefaultInputs(settings);
+  model.setDefaultFunctionSwitches(Boards::getCapability(getCurrentFirmware()->getBoard(), Board::FunctionSwitches));
 
   int mixIndex = 0;
   int timerIndex = 0;
 
-  // Safe copy model name
   memset(model.name, 0, sizeof(model.name));
-  strncpy(model.name, name, sizeof(model.name)-1);
+  memcpy(model.name, name, sizeof(model.name) - 1);
+  model.name[sizeof(model.name) - 1] = '\0';
 
   // Add the channel mixes
   for (int i=0; i<WIZ_MAX_CHANNELS; i++ )
@@ -118,13 +114,13 @@ WizMix::operator ModelData()
         // Add the Throttle Cut option
         MixData & mix = model.mixData[mixIndex++];
         mix.destCh = i+1;
-        mix.srcRaw = SOURCE_TYPE_MAX;
+        mix.srcRaw = RawSource(SOURCE_TYPE_MAX);
         mix.weight = -100;
         mix.swtch.type = SWITCH_TYPE_SWITCH;
-        mix.swtch.index = IS_SKY9X(getCurrentBoard()) ? SWITCH_THR : SWITCH_SF0;
+        mix.swtch.index = SWITCH_SF0;
         mix.mltpx = MLTPX_REP;
         memset(mix.name, 0, sizeof(mix.name));
-        strncpy(mix.name, "Cut", MIXDATA_NAME_LEN);
+        strncpy(mix.name, WizMix::tr("Cut").toLatin1().data(), MIXDATA_NAME_LEN);
       }
     }
   }
@@ -132,7 +128,7 @@ WizMix::operator ModelData()
   // Add the Flight Timer option
   if (options[FLIGHT_TIMER_OPTION] && throttleChannel >= 0){
     memset(model.timers[timerIndex].name, 0, sizeof(model.timers[timerIndex].name));
-    strncpy(model.timers[timerIndex].name, "Flt", sizeof(model.timers[timerIndex].name)-1);
+    strncpy(model.timers[timerIndex].name, WizMix::tr("Flt").toLatin1().data(), sizeof(model.timers[timerIndex].name)-1);
     model.timers[timerIndex].mode = TimerData::TIMERMODE_START;
     timerIndex++;
   }
@@ -140,7 +136,7 @@ WizMix::operator ModelData()
   // Add the Throttle Timer option
   if (options[THROTTLE_TIMER_OPTION] && throttleChannel >= 0){
     memset(model.timers[timerIndex].name, 0, sizeof(model.timers[timerIndex].name));
-    strncpy(model.timers[timerIndex].name, "Thr", sizeof(model.timers[timerIndex].name)-1);
+    strncpy(model.timers[timerIndex].name, WizMix::tr("Thr").toLatin1().data(), sizeof(model.timers[timerIndex].name)-1);
     model.timers[timerIndex].mode = TimerData::TIMERMODE_THR;
     timerIndex++;
   }

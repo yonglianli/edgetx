@@ -19,10 +19,9 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _TASKS_H_
-#define _TASKS_H_
+#pragma once
 
-#include "rtos.h"
+#include "os/task.h"
 
 // stack sizes should be in multiples of 8 for better alignment
 #if defined (COLORLCD)
@@ -54,12 +53,14 @@
 #endif
 
 
-extern TaskStack<MENUS_STACK_SIZE> menusStack;
-extern TaskStack<MIXER_STACK_SIZE> mixerStack;
-extern TaskStack<AUDIO_STACK_SIZE> audioStack;
+extern task_handle_t menusTaskId;
+
+#if defined(AUDIO)
+extern task_handle_t audioTaskId;
+#endif
 
 #if defined(CLI)
-extern TaskStack<CLI_STACK_SIZE> cliStack;
+extern task_handle_t cliTaskId;
 #endif
 
 void tasksStart();
@@ -69,5 +70,3 @@ inline void resetForcePowerOffRequest()
 {
   timeForcePowerOffPressed = 0;
 }
-
-#endif // _TASKS_H_

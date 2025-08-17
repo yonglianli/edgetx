@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -100,22 +101,31 @@ class MainWindow : public QMainWindow
     void customizeSplash();
     void about();
     void compare();
-    void appPrefs();
     void updateMenus();
     void createProfile();
     void copyProfile();
     void deleteProfile(const int pid);
     void deleteCurrentProfile();
-    void exportSettings();
-    void importSettings();
+    void editAppSettings();
+    void exportAppSettings();
+    void importAppSettings();
     void autoClose();
     void chooseProfile();
     void autoCheckForUpdates();
     void manualCheckForUpdates();
-    void downloads();
+    void updates();
     void doUpdates(bool check, bool interactive = true);
 
-    void openFile(const QString & fileName, bool updateLastUsedDir = false);
+    void openFile(const QString & fileName);
+
+    void readSettingsSDPath();
+    void writeSettingsSDPath();
+
+    void viewFileToolbar();
+    void viewModelsToolbar();
+    void viewRadioToolbar();
+    void viewSettingsToolbar();
+    void viewToolsToolbar();
 
   private:
     QAction * addAct(const QString & icon, const char * slot = NULL, const QKeySequence & shortcut = 0, QObject * slotObj = NULL, const char * signal = NULL);
@@ -124,6 +134,8 @@ class MainWindow : public QMainWindow
     void trAct(QAction * act, const QString & text, const QString & descript);
 
     QMenu * createLanguageMenu(QWidget * parent = Q_NULLPTR);
+
+    void setActCheckability(QAction * act, bool checked);
 
     void createActions();
     void createMenus();
@@ -142,8 +154,11 @@ class MainWindow : public QMainWindow
 
     bool readSettingsFromRadio(const QString & filename);
     bool readFirmwareFromRadio(const QString & filename);
+    bool readSettingsFromSDPath(const QString & filename);
 
     bool checkProfileRadioExists(int profId);
+
+    bool isSDPathValid();
 
     QMdiArea *mdiArea;
 
@@ -154,21 +169,30 @@ class MainWindow : public QMainWindow
     QVector<QAction *> profileActs;
     QList<QAction *> fileWindowActions;
 
+    // top level menus
     QMenu *fileMenu;
-    QMenu *editMenu;
+    QMenu *modelsMenu;
+    QMenu *viewMenu;
     QMenu *settingsMenu;
-    QMenu *burnMenu;
-    QMenu *helpMenu;
+    QMenu *radioMenu;
+    QMenu *toolsMenu;
     QMenu *windowMenu;
+    QMenu *helpMenu;
+
+    // sub menus
     QMenu *iconThemeSizeMenu;
     QMenu *themeMenu;
     QMenu *recentFilesMenu;
     QMenu *profilesMenu;
+
     QActionGroup * windowsListActions;
+
     QToolBar *fileToolBar;
-    QToolBar *editToolBar;
-    QToolBar *burnToolBar;
-    QToolBar *helpToolBar;
+    QToolBar *modelsToolBar;
+    QToolBar *radioToolBar;
+    QToolBar *settingsToolBar;
+    QToolBar *toolsToolBar;
+
     QAction *newAct;
     QAction *openAct;
     QAction *saveAct;
@@ -176,8 +200,8 @@ class MainWindow : public QMainWindow
     QAction *closeAct;
     QAction *recentFilesAct;
     QAction *exitAct;
-    QAction *appPrefsAct;
-    QAction *downloadsAct;
+    QAction *editAppSettingsAct;
+    QAction *updatesAct;
     QAction *manualChkForUpdAct;
     QAction *sdsyncAct;
     QAction *changelogAct;
@@ -197,11 +221,17 @@ class MainWindow : public QMainWindow
     QAction *createProfileAct;
     QAction *copyProfileAct;
     QAction *deleteProfileAct;
-    QAction *exportSettingsAct;
-    QAction *importSettingsAct;
-    //QAction *openDocURLAct;
-    QAction *actTabbedWindows;
-    QAction *actTileWindows;
-    QAction *actCascadeWindows;
-    QAction *actCloseAllWindows;
+    QAction *exportAppSettingsAct;
+    QAction *importAppSettingsAct;
+    QAction *tabbedWindowsAct;
+    QAction *tileWindowsAct;
+    QAction *cascadeWindowsAct;
+    QAction *closeAllWindowsAct;
+    QAction *writeSettingsSDPathAct;
+    QAction *readSettingsSDPathAct;
+    QAction *viewFileToolbarAct;
+    QAction *viewModelsToolbarAct;
+    QAction *viewRadioToolbarAct;
+    QAction *viewSettingsToolbarAct;
+    QAction *viewToolsToolbarAct;
 };

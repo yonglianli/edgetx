@@ -19,10 +19,10 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _OPENTX_SIMULATOR_H_
-#define _OPENTX_SIMULATOR_H_
+#pragma once
 
 #include "simulatorinterface.h"
+#include "dataconstants.h"
 
 #include <QMutex>
 #include <QObject>
@@ -59,6 +59,13 @@ class DLLEXPORT OpenTxSimulator : public SimulatorInterface
 
     static QVector<QIODevice *> tracebackDevices;
 
+    void drv_auxSerialInit(quint8 port_num, const etx_serial_init* dev);
+    void drv_auxSerialDeinit(quint8 port_num);
+    void drv_auxSerialSetBaudrate(quint8 port_num, uint32_t baudrate);
+    void drv_auxSerialSendByte(quint8 port_num, uint8_t byte);
+    void drv_auxSerialSendBuffer(quint8 port_num, const uint8_t* data, uint32_t size);
+    int drv_auxSerialGetByte(quint8 port_num, uint8_t* data);
+
   public slots:
 
     virtual void init();
@@ -78,10 +85,13 @@ class DLLEXPORT OpenTxSimulator : public SimulatorInterface
     virtual void touchEvent(int type, int x, int y);
     virtual void lcdFlushed();
     virtual void setTrainerTimeout(uint16_t ms);
-    virtual void sendTelemetry(const QByteArray data);
+    virtual void sendTelemetry(const uint8_t module, const uint8_t protocol, const QByteArray data);
+    virtual void sendInternalModuleTelemetry(const uint8_t protocol, const QByteArray data);
+    virtual void sendExternalModuleTelemetry(const uint8_t protocol, const QByteArray data);
     virtual void setLuaStateReloadPermanentScripts();
     virtual void addTracebackDevice(QIODevice * device);
     virtual void removeTracebackDevice(QIODevice * device);
+    virtual void receiveAuxSerialData(const quint8 port_num, const QByteArray & data);
 
   protected slots:
     void run();
@@ -92,11 +102,11 @@ class DLLEXPORT OpenTxSimulator : public SimulatorInterface
     void setStopRequested(bool stop);
     bool checkLcdChanged();
     void checkOutputsChanged();
+    void checkFuncSwitchChanged();
     uint8_t getStickMode();
     const char * getPhaseName(unsigned int phase);
     const QString getCurrentPhaseName();
     const char * getError();
-    const int voltageToAdc(const int volts);
 
     QString simuSdDirectory;
     QString simuSettingsDirectory;
@@ -111,5 +121,3 @@ class DLLEXPORT OpenTxSimulator : public SimulatorInterface
     bool m_stopRequested;
 
 };
-
-#endif // _OPENTX_SIMULATOR_H_

@@ -19,14 +19,15 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _BOARD_H_
-#define _BOARD_H_
+#pragma once
 
 #include "definitions.h"
-#include "opentx_constants.h"
+#include "edgetx_constants.h"
 
 // Defines used in board_common.h
 #define ROTARY_ENCODER_NAVIGATION
+
+#define BOOTLOADER_KEYS 0x42
 
 #include "board_common.h"
 #include "hal.h"
@@ -38,6 +39,7 @@
 #include "tp_gt911.h"
 #endif
 
+#define HAS_HARDWARE_OPTIONS
 
 PACK(typedef struct {
   uint8_t pcbrev:2;
@@ -47,8 +49,12 @@ PACK(typedef struct {
 extern HardwareOptions hardwareOptions;
 
 #define FLASHSIZE                      0x200000
+#define FLASH_PAGESIZE                 256
 #define BOOTLOADER_SIZE                0x20000
 #define FIRMWARE_ADDRESS               0x08000000
+#define FIRMWARE_LEN(fsize)            (fsize - BOOTLOADER_SIZE)
+#define FIRMWARE_MAX_LEN               (FLASHSIZE - BOOTLOADER_SIZE)
+#define APP_START_ADDRESS              (uint32_t)(FIRMWARE_ADDRESS + BOOTLOADER_SIZE)
 
 #define MB                             *1024*1024
 #define LUA_MEM_EXTRA_MAX              (2 MB)    // max allowed memory usage for Lua bitmaps (in bytes)
@@ -72,6 +78,10 @@ enum {
   // X10
   PCBREV_X10_STD = 0,
   PCBREV_X10_EXPRESS = 3,
+
+  //T15
+  PCBREV_T15_STD = 0,
+  PCBREV_T15_IPS = 1,
 };
 
 #if defined(SIMU)
@@ -79,7 +89,7 @@ enum {
 #elif defined(PCBX10)
   #if defined(PCBREV_EXPRESS)
     #define IS_FIRMWARE_COMPATIBLE_WITH_BOARD() (hardwareOptions.pcbrev == PCBREV_X10_EXPRESS)
-  #elif defined(RADIO_FAMILY_T16)
+  #elif defined(RADIO_FAMILY_T16) || defined(RADIO_F16)
     #define IS_FIRMWARE_COMPATIBLE_WITH_BOARD() (true)
   #else
     #define IS_FIRMWARE_COMPATIBLE_WITH_BOARD() (hardwareOptions.pcbrev == PCBREV_X10_STD)
@@ -91,17 +101,6 @@ enum {
     #define IS_FIRMWARE_COMPATIBLE_WITH_BOARD() (hardwareOptions.pcbrev == PCBREV_X12S_LT13)
   #endif
 #endif
-
-// Flash Write driver
-#define FLASH_PAGESIZE                 256
-void unlockFlash();
-void lockFlash();
-void flashWrite(uint32_t * address, const uint32_t * buffer);
-uint32_t isFirmwareStart(const uint8_t * buffer);
-uint32_t isBootloaderStart(const uint8_t * buffer);
-
-// SDRAM driver
-void SDRAM_Init();
 
 #if defined(INTERNAL_MODULE_PXX1) || defined(INTERNAL_MODULE_PXX2)
   #define HARDWARE_INTERNAL_RAS
@@ -118,41 +117,23 @@ void SDRAM_Init();
 //
 #define INTERNAL_MODULE_ON()                                  \
   do {                                                        \
-    GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN); \
+    gpio_set(INTMODULE_PWR_GPIO);			      \
     delay_ms(1);                                              \
   } while (0)
 
 #else
 
 // Just turn the modue ON for all other targets
-#define INTERNAL_MODULE_ON() \
-  GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
+#define INTERNAL_MODULE_ON()    gpio_set(INTMODULE_PWR_GPIO)
 
 #endif
 
-#define INTERNAL_MODULE_OFF()   GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
-#define EXTERNAL_MODULE_ON()    GPIO_SetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
-#define EXTERNAL_MODULE_OFF()   GPIO_ResetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
-
-#if !defined(PXX2)
-  #define IS_PXX2_INTERNAL_ENABLED()            (false)
-  #define IS_PXX1_INTERNAL_ENABLED()            (true)
-#elif !defined(PXX1)
-  #define IS_PXX2_INTERNAL_ENABLED()            (true)
-  #define IS_PXX1_INTERNAL_ENABLED()            (false)
-#else
-  // TODO #define PXX2_PROBE
-  // TODO #define IS_PXX2_INTERNAL_ENABLED()            (hardwareOptions.pxx2Enabled)
-  #define IS_PXX2_INTERNAL_ENABLED()            (true)
-  #define IS_PXX1_INTERNAL_ENABLED()            (true)
-#endif
-
-#if !defined(NUM_FUNCTIONS_SWITCHES)
-#define NUM_FUNCTIONS_SWITCHES        0
-#endif
+#define INTERNAL_MODULE_OFF()   gpio_clear(INTMODULE_PWR_GPIO)
+#define EXTERNAL_MODULE_ON()    gpio_set(EXTMODULE_PWR_GPIO)
+#define EXTERNAL_MODULE_OFF()   gpio_clear(EXTMODULE_PWR_GPIO)
 
 // POTS and SLIDERS default configuration
-#if defined(RADIO_TX16S)
+#if defined(RADIO_TX16S) || defined(RADIO_F16) || defined(RADIO_V16)
 #define XPOS_CALIB_DEFAULT  {0x3, 0xc, 0x15, 0x1e, 0x26}
 #endif
 
@@ -161,6 +142,10 @@ void SDRAM_Init();
 #define NUM_TRIMS_KEYS                          (NUM_TRIMS * 2)
 
 // Battery driver
+#if defined(RADIO_T15)
+#define VOLTAGE_DROP 65
+#endif
+
 #if defined(PCBX10)
   // Lipo 2S
   #define BATTERY_WARN      66 // 6.6V
@@ -199,6 +184,10 @@ uint32_t pwrPressedDuration();
 // USB Charger
 void usbChargerInit();
 bool usbChargerLed();
+
+#if defined(RADIO_V16)
+  uint16_t getSixPosAnalogValue(uint16_t adcValue);
+#endif
 
 // Led driver
 void ledInit();
@@ -259,20 +248,6 @@ bool isBacklightEnabled();
 
 // Audio driver
 void audioInit();
-void audioConsumeCurrentBuffer();
-#define audioDisableIrq()             // interrupts must stay enabled on Horus
-#define audioEnableIrq()              // interrupts must stay enabled on Horus
-#if defined(PCBX12S)
-#define setSampleRate(freq)
-#else
-void setSampleRate(uint32_t frequency);
-#define audioWaitReady()
-#endif
-void setScaledVolume(uint8_t volume);
-void setVolume(uint8_t volume);
-int32_t getVolume();
-#define VOLUME_LEVEL_MAX               23
-#define VOLUME_LEVEL_DEF               12
 
 // Telemetry driver
 #define INTMODULE_FIFO_SIZE            512
@@ -291,8 +266,8 @@ void telemetryPortInvertedInit(uint32_t baudrate);
 
 
 // Aux serial port driver
-#if defined(RADIO_TX16S)
-  #define DEBUG_BAUDRATE                  400000
+#if defined(RADIO_TX16S) || defined(RADIO_F16)
+  #define DEBUG_BAUDRATE                  460800
   #define LUA_DEFAULT_BAUDRATE            115200
 #else
   #define DEBUG_BAUDRATE                  115200
@@ -318,10 +293,16 @@ void bluetoothWriteWakeup();
 uint8_t bluetoothIsWriting();
 void bluetoothDisable();
 
-#if defined (RADIO_TX16S)
+#if defined(RADIO_TX16S) || defined(RADIO_F16) || defined(RADIO_V16)
   #define BATTERY_DIVIDER 1495
 #else
   #define BATTERY_DIVIDER 1629
-#endif 
+#endif
 
-#endif // _BOARD_H_
+#if defined(FUNCTION_SWITCHES)
+#define NUM_FUNCTIONS_SWITCHES 6
+#define NUM_FUNCTIONS_GROUPS   3
+
+#else
+#define NUM_FUNCTIONS_SWITCHES 0
+#endif

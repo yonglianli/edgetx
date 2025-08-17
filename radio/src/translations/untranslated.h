@@ -35,7 +35,7 @@
 #define TR_VTRAINERMODES                                                \
         TR_VTRAINER_MASTER_OFF, TR_VTRAINER_MASTER_JACK, TR_VTRAINER_SLAVE_JACK, \
         TR_VTRAINER_MASTER_SBUS_MODULE, TR_VTRAINER_MASTER_CPPM_MODULE, \
-        TR_VTRAINER_MASTER_BATTERY, TR_VTRAINER_BLUETOOTH, TR_VTRAINER_MULTI
+        TR_VTRAINER_MASTER_BATTERY, TR_VTRAINER_BLUETOOTH, TR_VTRAINER_MULTI, TR_VTRAINER_CRSF
 
 #if defined(PCBHORUS)
   #define TR_SM_VSRCRAW               "smA","smB","smC","smD","smE","smF",
@@ -86,7 +86,8 @@
 #define TR_R9M_FCC_POWER_VALUES        "10mW","100mW","500mW","1W (auto)"
 #define TR_R9M_LBT_POWER_VALUES        "25mW 8CH","25mW 16CH","200mW NoTele","500mW NoTele"
 
-#define TR_PPM_PROTOCOLS               TR("No Telem", "No Telemetry"),"MLink"
+#define TR_PPM_PROTOCOLS               TR("No Telem", "No Telemetry"),"MLink","SPort"
+#define TR_SBUS_PROTOCOLS              TR("No Telem", "No Telemetry"),"SPort"
 #define TR_DSM_PROTOCOLS               "LP45","DSM2","DSMX"
 
 #define TR_MULTI_PROTOCOLS             PROTO_NAMES
@@ -102,7 +103,7 @@
 #define TR_FLYSKY_PULSE_PROTO          "PWM","PPM"
 #define TR_FLYSKY_SERIAL_PROTO         "iBUS","SBUS"
 #define TR_PPM_POL                     "-","+"
-#define TR_PWR_OFF_DELAYS              "0s","1s","2s","4s"
+#define TR_PWR_OFF_DELAYS              "0s","0.5s","1s","2s","3s"
 #if defined(COLORLCD)
 #define TR_SPLASHSCREEN_DELAYS         "1s","2s","3s","4s","6s","8s","10s","15s"
 #endif
@@ -115,8 +116,10 @@
 #define STR_SENSOR_A2                        "A2"
 #define STR_SENSOR_A3                        "A3"
 #define STR_SENSOR_A4                        "A4"
+#define STR_SENSOR_VOLT                      "Volt"
 #define STR_SENSOR_BATT                      "RxBt"
 #define STR_SENSOR_ALT                       "Alt"
+#define STR_SENSOR_TEMP                      "Temp"
 #define STR_SENSOR_TEMP1                     "Tmp1"
 #define STR_SENSOR_TEMP2                     "Tmp2"
 #define STR_SENSOR_TEMP3                     "Tmp3"
@@ -302,6 +305,8 @@
 #define STR_CHAR_CHANNEL   "\302\222"
 #define STR_CHAR_TELEMETRY "\302\223"
 #define STR_CHAR_LUA       "\302\224"
+#define STR_CHAR_LS        "\302\225"
+#define STR_CHAR_CURVE     "\302\226"
 
 #if !defined(COLORLCD)
   // '~' is remapped to 0x7B in B&W font
@@ -313,7 +318,12 @@
 #define STR_CHAR_BW_GREATEREQUAL '}'
 #define STR_CHAR_BW_DEGREE       '@'
 
-#define TR_FSGROUPS                     "-","1","2","3"
+#define TR_FSGROUPS                     "-","1","2","3","4"
+#if defined(COLORLCD)
+#define TR_FSSWITCHES                   TR_LAST, "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", TR_OFF
+#else
+#define TR_FSSWITCHES                   "=", "SW1", "SW2", "SW3", "SW4", "SW5", "SW6", TR_OFF
+#endif
 
 //
 // HoTT Telemetry sensor names by Hott device

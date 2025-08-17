@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -163,9 +164,9 @@ void RadioOutputsWidget::setupChannelsDisplay(bool mixes)
 
   // populate outputs
   int column = 0;
-  for (int i=0; i < outputs; i++) {
+  for (int i = 0; i < outputs; i++) {
     QLabel * label = new QLabel(channelsWidget);
-    label->setText(" " + RawSource(SOURCE_TYPE_CH, i).toString() + " ");
+    label->setText(" " + RawSource(SOURCE_TYPE_CH, i + 1).toString() + " ");
     label->setAlignment(Qt::AlignCenter);
     label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     channelsLayout->addWidget(label, 0, column, 1, 1);
@@ -221,9 +222,10 @@ void RadioOutputsWidget::setupGVarsDisplay()
   ui->globalVarsScroll->setWidget(gvarsWidget);
 
   QPalette::ColorRole bgrole = QPalette::AlternateBase;
+  const bool isAir = Boards::isAir();
   for (int fm=0; fm < fmodes; fm++) {
     QLabel * label = new QLabel(gvarsWidget);
-    label->setText(QString(tr("FM%1")).arg(fm));
+    label->setText(QString("%1%2").arg(isAir ? tr("FM") : tr("DM")).arg(fm));
     label->setAlignment(Qt::AlignCenter);
     label->setBackgroundRole(bgrole);
     gvarsLayout->addWidget(label, 0, fm+1);
@@ -290,11 +292,7 @@ QWidget * RadioOutputsWidget::createLogicalSwitch(QWidget * parent, int switchNo
   QFont font = swtch->font();
   font.setBold(true);
   swtch->setFont(font);
-#if QT_VERSION < QT_VERSION_CHECK(5, 11, 0)
-  swtch->setMinimumWidth(swtch->fontMetrics().width("99") + 10);
-#else
   swtch->setMinimumWidth(swtch->fontMetrics().horizontalAdvance("99") + 10);
-#endif
   font.setBold(false);
   swtch->setFont(font);
   swtch->setText(QString("%1").arg(switchNo+1, 2, 10, QChar('0')));

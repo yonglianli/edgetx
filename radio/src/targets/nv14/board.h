@@ -19,11 +19,10 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _BOARD_H_
-#define _BOARD_H_
+#pragma once
 
 #include "definitions.h"
-#include "opentx_constants.h"
+#include "edgetx_constants.h"
 
 #include "board_common.h"
 #include "hal.h"
@@ -32,20 +31,22 @@
 #include "hal/watchdog_driver.h"
 
 #define FLASHSIZE                       0x200000
+#define FLASH_PAGESIZE                  256
 #define BOOTLOADER_SIZE                 0x20000
 #define FIRMWARE_ADDRESS                0x08000000
+#define FIRMWARE_LEN(fsize)             (fsize - BOOTLOADER_SIZE)
+#define FIRMWARE_MAX_LEN                (FLASHSIZE - BOOTLOADER_SIZE)
+#define APP_START_ADDRESS               (uint32_t)(FIRMWARE_ADDRESS + BOOTLOADER_SIZE)
 
 #define MB                              *1024*1024
 #define LUA_MEM_EXTRA_MAX               (2 MB)    // max allowed memory usage for Lua bitmaps (in bytes)
 #define LUA_MEM_MAX                     (6 MB)    // max allowed memory usage for complete Lua  (in bytes), 0 means unlimited
 
+#define BOOTLOADER_KEYS 0x42
+
 extern uint16_t sessionTimer;
 
 #define SLAVE_MODE()                    (g_model.trainerData.mode == TRAINER_MODE_SLAVE)
-
-// initilizes the board for the bootloader
-#define HAVE_BOARD_BOOTLOADER_INIT 1
-void boardBootloaderInit();
 
 // Board driver
 void boardInit();
@@ -55,21 +56,12 @@ void boardOff();
 #define LEN_CPU_UID                     (3*8+2)
 void getCPUUniqueID(char * s);
 
-// Flash Write driver
-#define FLASH_PAGESIZE 256
-void unlockFlash();
-void lockFlash();
-void flashWrite(uint32_t * address, const uint32_t * buffer);
-uint32_t isFirmwareStart(const uint8_t * buffer);
-uint32_t isBootloaderStart(const uint8_t * buffer);
-
-// SDRAM driver
-void SDRAM_Init();
-
 enum {
   PCBREV_NV14 = 0,
   PCBREV_EL18 = 1,
 };
+
+#define HAS_HARDWARE_OPTIONS
 
 typedef struct {
   uint8_t pcbrev;
@@ -82,24 +74,24 @@ extern HardwareOptions hardwareOptions;
 #define INTERNAL_MODULE_OFF()                                     \
   do {                                                            \
     if (hardwareOptions.pcbrev == PCBREV_NV14)                    \
-      GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN);   \
+      gpio_set(INTMODULE_PWR_GPIO);				  \
     else                                                          \
-      GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN); \
+      gpio_clear(INTMODULE_PWR_GPIO);				  \
   } while (0)
 
 #define INTERNAL_MODULE_ON()                                      \
   do {                                                            \
     if (hardwareOptions.pcbrev == PCBREV_NV14)                    \
-      GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN); \
+      gpio_clear(INTMODULE_PWR_GPIO);				  \
     else                                                          \
-      GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN);   \
+      gpio_set(INTMODULE_PWR_GPIO);				  \
   } while (0)
 
-#define EXTERNAL_MODULE_ON()            GPIO_SetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
-#define EXTERNAL_MODULE_OFF()           GPIO_ResetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
+#define EXTERNAL_MODULE_ON()            gpio_set(EXTMODULE_PWR_GPIO)
+#define EXTERNAL_MODULE_OFF()           gpio_clear(EXTMODULE_PWR_GPIO)
 
-#define BLUETOOTH_MODULE_ON()           GPIO_ResetBits(BLUETOOTH_ON_GPIO, BLUETOOTH_ON_GPIO_PIN)
-#define BLUETOOTH_MODULE_OFF()          GPIO_SetBits(BLUETOOTH_ON_GPIO, BLUETOOTH_ON_GPIO_PIN)
+#define BLUETOOTH_MODULE_ON()           gpio_clear(BLUETOOTH_ON_GPIO)
+#define BLUETOOTH_MODULE_OFF()          gpio_set(BLUETOOTH_ON_GPIO)
 
 #else
 
@@ -133,7 +125,7 @@ extern "C" {
 
 // Power driver
 #define SOFT_PWR_CTRL
-#define POWER_ON_DELAY               10 // 1s
+#define POWER_ON_DELAY               100 // ms
 void pwrInit();
 void extModuleInit();
 uint32_t pwrCheck();
@@ -196,41 +188,6 @@ bool isBacklightEnabled();
 }
 #endif
 
-// Audio driver
-void audioInit();
-void audioConsumeCurrentBuffer();
-void audioSpiWriteBuffer(const uint8_t * buffer, uint32_t size);
-void audioSpiSetSpeed(uint8_t speed);
-uint8_t audioHardReset();
-uint8_t audioSoftReset();
-void audioSendRiffHeader();
-void audioOn();
-void audioOff();
-bool isAudioReady();
-bool audioChipReset();
-
-#define SPI_SPEED_2                    0
-#define SPI_SPEED_4                    1
-#define SPI_SPEED_8                    2
-#define SPI_SPEED_16                   3
-#define SPI_SPEED_32                   4
-#define SPI_SPEED_64                   5
-#define SPI_SPEED_128                  6
-#define SPI_SPEED_256                  7
-
-#define audioDisableIrq()             // interrupts must stay enabled on Horus
-#define audioEnableIrq()              // interrupts must stay enabled on Horus
-#if defined(PCBNV14)
-#define setSampleRate(freq)
-#else
-void setSampleRate(uint32_t frequency);
-#endif
-void setScaledVolume(uint8_t volume);
-void setVolume(uint8_t volume);
-int32_t getVolume();
-#define VOLUME_LEVEL_MAX               23
-#define VOLUME_LEVEL_DEF               12
-
 // Telemetry driver
 #define INTMODULE_FIFO_SIZE            512
 #define TELEMETRY_FIFO_SIZE            512
@@ -242,7 +199,6 @@ void hapticOff();
 void hapticOn(uint32_t pwmPercent);
 
 // Second serial port driver
-//#define AUX_SERIAL
 #define DEBUG_BAUDRATE                  115200
 #define LUA_DEFAULT_BAUDRATE            115200
 
@@ -250,5 +206,3 @@ void hapticOn(uint32_t pwmPercent);
 bool touchPanelEventOccured();
 struct TouchState touchPanelRead();
 struct TouchState getInternalTouchState();
-
-#endif // _BOARD_H_

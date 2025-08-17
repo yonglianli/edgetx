@@ -19,24 +19,33 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _BOARD_H_
-#define _BOARD_H_
+#pragma once
 
 #include "definitions.h"
-#include "opentx_constants.h"
+#include "edgetx_constants.h"
 
 #include "board_common.h"
 #include "hal.h"
 #include "hal/serial_port.h"
 #include "hal/watchdog_driver.h"
 
+#if defined(ADC_GPIO_PIN_STICK_TH)
+#define SURFACE_RADIO  true
+#endif
+
 #define FLASHSIZE                       0x200000
+#define FLASH_PAGESIZE                  256
 #define BOOTLOADER_SIZE                 0x20000
 #define FIRMWARE_ADDRESS                0x08000000
+#define FIRMWARE_LEN(fsize)             (fsize - BOOTLOADER_SIZE)
+#define FIRMWARE_MAX_LEN                (FLASHSIZE - BOOTLOADER_SIZE)
+#define APP_START_ADDRESS               (uint32_t)(FIRMWARE_ADDRESS + BOOTLOADER_SIZE)
 
 #define MB                              *1024*1024
 #define LUA_MEM_EXTRA_MAX               (2 MB)    // max allowed memory usage for Lua bitmaps (in bytes)
 #define LUA_MEM_MAX                     (6 MB)    // max allowed memory usage for complete Lua  (in bytes), 0 means unlimited
+
+#define BOOTLOADER_KEYS 0x42
 
 extern uint16_t sessionTimer;
 
@@ -50,40 +59,67 @@ void boardOff();
 #define LEN_CPU_UID                     (3*8+2)
 void getCPUUniqueID(char * s);
 
-// Flash Write driver
-#define FLASH_PAGESIZE 256
-void unlockFlash();
-void lockFlash();
-void flashWrite(uint32_t * address, const uint32_t * buffer);
-uint32_t isFirmwareStart(const uint8_t * buffer);
-uint32_t isBootloaderStart(const uint8_t * buffer);
+#if defined(RADIO_NV14_FAMILY)
+  enum {
+    PCBREV_NV14 = 0,
+    PCBREV_EL18 = 1,
+  };
+  
+  #define HAS_HARDWARE_OPTIONS
+
+  typedef struct {
+    uint8_t pcbrev;
+  } HardwareOptions;
+
+  extern HardwareOptions hardwareOptions;
+#endif
 
 // SDRAM driver
-void SDRAM_Init();
+extern "C" void SDRAM_Init();
 
 // Pulses driver
 #if !defined(SIMU)
 
-#define INTERNAL_MODULE_ON()            GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
-#define INTERNAL_MODULE_OFF()           GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
-#define EXTERNAL_MODULE_ON()            GPIO_SetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
-#define EXTERNAL_MODULE_OFF()           GPIO_ResetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
-#define EXTERNAL_MODULE_PWR_OFF         EXTERNAL_MODULE_OFF
-#define BLUETOOTH_MODULE_ON()           GPIO_ResetBits(BT_EN_GPIO, BT_EN_GPIO_PIN)
-#define BLUETOOTH_MODULE_OFF()          GPIO_SetBits(BT_EN_GPIO, BT_EN_GPIO_PIN)
-#define IS_INTERNAL_MODULE_ON()         (false)
-#define IS_EXTERNAL_MODULE_ON()         (GPIO_ReadInputDataBit(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN) == Bit_SET)
+#if defined(RADIO_NV14_FAMILY)
+  #define INTERNAL_MODULE_OFF()                 \
+  do {                                          \
+    if (hardwareOptions.pcbrev == PCBREV_NV14)  \
+      gpio_set(INTMODULE_PWR_GPIO);			    \
+    else                                        \
+      gpio_clear(INTMODULE_PWR_GPIO);           \
+  } while (0)
 
+  #define INTERNAL_MODULE_ON()                  \
+  do {                                          \
+    if (hardwareOptions.pcbrev == PCBREV_NV14)  \
+      gpio_clear(INTMODULE_PWR_GPIO);           \
+    else                                        \
+      gpio_set(INTMODULE_PWR_GPIO);             \
+  } while (0)
+#elif defined(RADIO_NB4P) || defined(RADIO_PL18U)
+  #define INTERNAL_MODULE_ON()            gpio_clear(INTMODULE_PWR_GPIO)
+  #define INTERNAL_MODULE_OFF()           gpio_set(INTMODULE_PWR_GPIO);
 #else
+  #define INTERNAL_MODULE_ON()            gpio_set(INTMODULE_PWR_GPIO)
+  #define INTERNAL_MODULE_OFF()           gpio_clear(INTMODULE_PWR_GPIO)
+#endif
 
-#define INTERNAL_MODULE_OFF()
+#define EXTERNAL_MODULE_ON()            gpio_set(EXTMODULE_PWR_GPIO)
+#define EXTERNAL_MODULE_OFF()           gpio_clear(EXTMODULE_PWR_GPIO)
+#define EXTERNAL_MODULE_PWR_OFF         EXTERNAL_MODULE_OFF
+#define BLUETOOTH_MODULE_ON()           gpio_clear(BLUETOOTH_ON_GPIO)
+#define BLUETOOTH_MODULE_OFF()          gpio_set(BLUETOOTH_ON_GPIO)
+//#define IS_INTERNAL_MODULE_ON()         (false)
+//#define IS_EXTERNAL_MODULE_ON()         (gpio_read(EXTMODULE_PWR_GPIO) ? 1 : 0)
+
+#else // defined(SIMU)
+
 #define INTERNAL_MODULE_ON()
+#define INTERNAL_MODULE_OFF()
 #define EXTERNAL_MODULE_ON()
 #define EXTERNAL_MODULE_OFF()
 #define BLUETOOTH_MODULE_ON()
 #define BLUETOOTH_MODULE_OFF()
-#define IS_INTERNAL_MODULE_ON()         (false)
-#define IS_EXTERNAL_MODULE_ON()         (false)
 
 #endif // defined(SIMU)
 
@@ -94,10 +130,24 @@ void SDRAM_Init();
 #define NUM_TRIMS                       8
 #define DEFAULT_STICK_DEADZONE          2
 
-#define BATTERY_WARN                  37 // 3.7V
-#define BATTERY_MIN                   35 // 3.4V
-#define BATTERY_MAX                   43 // 4.3V
-#define BATTERY_DIVIDER               962
+#if defined(RADIO_NV14_FAMILY)
+  #define BATTERY_WARN                  36 // 3.6V
+  #define BATTERY_MIN                   35 // 3.5V
+  #define BATTERY_MAX                   42 // 4.2V
+#else
+  // LiHV battery thresholds
+  #define BATTERY_WARN                  37 // 3.7V
+  #define BATTERY_MIN                   35 // 3.4V
+  #define BATTERY_MAX                   43 // 4.3V
+#endif
+
+#if defined(RADIO_NV14_FAMILY)
+  #define BATTERY_DIVIDER               3102 // = 2047 * 510k / (510k + 510k) * 10 / 3.3V
+#elif defined(RADIO_NB4P)
+  #define BATTERY_DIVIDER               3102 // = 2047 * 10k / (10k + 10k) * 10 / 3.3V
+#else
+  #define BATTERY_DIVIDER               962  // = 2047 * 22k / (120k + 22k) * 10 / 3.3V
+#endif
 
 #if defined(__cplusplus) && !defined(SIMU)
 extern "C" {
@@ -105,7 +155,7 @@ extern "C" {
 
 // Power driver
 #define SOFT_PWR_CTRL
-#define POWER_ON_DELAY               10 // 1s
+#define POWER_ON_DELAY               100 // ms
 void pwrInit();
 void extModuleInit();
 uint32_t pwrCheck();
@@ -176,40 +226,35 @@ bool isBacklightEnabled();
 }
 #endif
 
-// Audio driver
-void audioInit();
-void audioConsumeCurrentBuffer();
-void audioSpiWriteBuffer(const uint8_t * buffer, uint32_t size);
-void audioSpiSetSpeed(uint8_t speed);
-uint8_t audioHardReset();
-uint8_t audioSoftReset();
-void audioSendRiffHeader();
-void audioOn();
-void audioOff();
-bool isAudioReady();
-bool audioChipReset();
-
-#define SPI_SPEED_2                    0
-#define SPI_SPEED_4                    1
-#define SPI_SPEED_8                    2
-#define SPI_SPEED_16                   3
-#define SPI_SPEED_32                   4
-#define SPI_SPEED_64                   5
-#define SPI_SPEED_128                  6
-#define SPI_SPEED_256                  7
-
-#define audioDisableIrq()             // interrupts must stay enabled on Horus
-#define audioEnableIrq()              // interrupts must stay enabled on Horus
-#if defined(PCBNV14)
-#define setSampleRate(freq)
+#if defined(RADIO_NB4P) || defined(RADIO_NV14_FAMILY)
+  #define IS_UCHARGER_ACTIVE()              gpio_read(UCHARGER_GPIO) ? (gpio_read(UCHARGER_CHARGE_END_GPIO) ? 0 : 1) : 1  
 #else
-void setSampleRate(uint32_t frequency);
+  #define IS_UCHARGER_ACTIVE()              gpio_read(UCHARGER_GPIO) ? 1 : 0
 #endif
-void setScaledVolume(uint8_t volume);
-void setVolume(uint8_t volume);
-int32_t getVolume();
-#define VOLUME_LEVEL_MAX               23
-#define VOLUME_LEVEL_DEF               12
+
+#if defined(RADIO_NB4P) || defined(RADIO_NV14_FAMILY)
+  #define IS_UCHARGER_CHARGE_END_ACTIVE()   gpio_read(UCHARGER_CHARGE_END_GPIO) ? 0 : 1
+#else
+  #define IS_UCHARGER_CHARGE_END_ACTIVE()   gpio_read(UCHARGER_CHARGE_END_GPIO) ? 1 : 0
+#endif
+
+#if defined(UCHARGER_EN_GPIO)
+  #if defined(RADIO_NV14_FAMILY)
+    #define ENABLE_UCHARGER()               gpio_clear(UCHARGER_EN_GPIO)
+    #define DISABLE_UCHARGER()              gpio_set(UCHARGER_EN_GPIO)
+  #else
+    #define ENABLE_UCHARGER()               gpio_set(UCHARGER_EN_GPIO)
+    #define DISABLE_UCHARGER()              gpio_clear(UCHARGER_EN_GPIO)
+  #endif
+#else
+  #define ENABLE_UCHARGER()
+  #define DISABLE_UCHARGER()
+#endif
+
+#if !defined(AUDIO_SPI)
+  // DAC Audio driver
+  void audioInit();
+#endif
 
 // Telemetry driver
 #define INTMODULE_FIFO_SIZE            512
@@ -222,7 +267,6 @@ void hapticOff();
 void hapticOn(uint32_t pwmPercent);
 
 // Second serial port driver
-//#define AUX_SERIAL
 #define DEBUG_BAUDRATE                  115200
 #define LUA_DEFAULT_BAUDRATE            115200
 
@@ -230,5 +274,3 @@ void hapticOn(uint32_t pwmPercent);
 bool touchPanelEventOccured();
 struct TouchState touchPanelRead();
 struct TouchState getInternalTouchState();
-
-#endif // _BOARD_H_

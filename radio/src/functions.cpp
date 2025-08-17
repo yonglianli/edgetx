@@ -19,14 +19,24 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "switches.h"
+
+#include "hal/audio_driver.h"
+
 #include "boards/generic_stm32/rgb_leds.h"
 
 #if defined(COLORLCD)
 void setRequestedMainView(uint8_t view);
 #endif
 
+#if defined(VIDEO_SWITCH)
+#include "videoswitch_driver.h"
+#if defined(SIMU)
+void switchToRadio() {};
+void switchToVideo() {};
+#endif
+#endif
 CustomFunctionsContext modelFunctionsContext = { 0 };
 
 CustomFunctionsContext globalFunctionsContext = { 0 };
@@ -46,7 +56,7 @@ void testFunc()
 }
 #endif
 
-PLAY_FUNCTION(playValue, source_t idx)
+PLAY_FUNCTION(playValue, mixsrc_t idx)
 {
   if (IS_FAI_FORBIDDEN(idx))
     return;
@@ -55,10 +65,16 @@ PLAY_FUNCTION(playValue, source_t idx)
     return;
 
   getvalue_t val = getValue(idx);
+  idx = abs(idx); // Don't need negative form any longer
 
   if (idx >= MIXSRC_FIRST_TELEM) {
     TelemetrySensor & telemetrySensor = g_model.telemetrySensors[(idx-MIXSRC_FIRST_TELEM) / 3];
     uint8_t attr = 0;
+
+    // Preserve the sign
+    int sign = (val >= 0) ? 1 : -1;
+    val = abs(val);
+
     if (telemetrySensor.prec > 0) {
       if (telemetrySensor.prec == 2) {
         if (val >= 5000) {
@@ -78,11 +94,14 @@ PLAY_FUNCTION(playValue, source_t idx)
         }
       }
     }
+
+    val *= sign; // Reapply sign if needed
+
     PLAY_NUMBER(val, telemetrySensor.unit == UNIT_CELLS ? UNIT_VOLTS : telemetrySensor.unit, attr);
   }
   else if (idx >= MIXSRC_FIRST_TIMER && idx <= MIXSRC_LAST_TIMER) {
     int flag = 0;
-    if (val > LONG_TIMER_DURATION || -val > LONG_TIMER_DURATION) {
+    if (abs(val) > LONG_TIMER_DURATION) {
       flag = PLAY_LONG_TIMER;
     }
     PLAY_DURATION(val, flag);
@@ -130,10 +149,13 @@ bool isRepeatDelayElapsed(const CustomFunctionData * functions, CustomFunctionsC
 #define VOLUME_HYSTERESIS 10            // how much must a input value change to actually be considered for new volume setting
 getvalue_t requiredSpeakerVolumeRawLast = 1024 + 1; //initial value must be outside normal range
 
-void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext & functionsContext)
+void evalFunctions(CustomFunctionData * functions, CustomFunctionsContext & functionsContext)
 {
   MASK_FUNC_TYPE newActiveFunctions  = 0;
   MASK_CFN_TYPE  newActiveSwitches = 0;
+#if defined(FUNCTION_SWITCHES)
+  g_model.cfsResetSFState();
+#endif
 
   uint8_t playFirstIndex = (functions == g_model.customFn ? 1 : 1+MAX_SPECIAL_FUNCTIONS);
   #define PLAY_INDEX   (i+playFirstIndex)
@@ -150,8 +172,12 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
   }
 #endif
 
+#if defined(VIDEO_SWITCH)
+  bool videoEnabled = false;
+#endif
+
   for (uint8_t i=0; i<MAX_SPECIAL_FUNCTIONS; i++) {
-    const CustomFunctionData * cfn = &functions[i];
+    CustomFunctionData * cfn = &functions[i];
     swsrc_t swtch = CFN_SWITCH(cfn);
     if (swtch) {
       MASK_CFN_TYPE switch_mask = ((MASK_CFN_TYPE)1 << i);
@@ -207,6 +233,13 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
               case FUNC_RESET_TELEMETRY:
                 telemetryReset();
                 break;
+
+              case FUNC_RESET_TRIMS: {
+                for (uint8_t i = 0; i < keysGetMaxTrims(); i++) {
+                  setTrimValue(mixerCurrentFlightMode, i, 0);
+                }
+                break;
+              }
             }
             if (CFN_PARAM(cfn) >= FUNC_RESET_PARAM_FIRST_TELEM) {
               uint8_t item = CFN_PARAM(cfn) - FUNC_RESET_PARAM_FIRST_TELEM;
@@ -264,15 +297,23 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
               trimGvar[CFN_PARAM(cfn) - MIXSRC_FIRST_TRIM] =
                   CFN_GVAR_INDEX(cfn);
             } else {
-              SET_GVAR(CFN_GVAR_INDEX(cfn),
-                       limit<int16_t>(MODEL_GVAR_MIN(CFN_GVAR_INDEX(cfn)),
-                                      calcRESXto100(getValue(CFN_PARAM(cfn))),
-                                      MODEL_GVAR_MAX(CFN_GVAR_INDEX(cfn))),
-                       mixerCurrentFlightMode);
+              if (CFN_GVAR_MODE(cfn) == FUNC_ADJUST_GVAR_SOURCE)
+                SET_GVAR(CFN_GVAR_INDEX(cfn),
+                        limit<int16_t>(MODEL_GVAR_MIN(CFN_GVAR_INDEX(cfn)),
+                                        calcRESXto100(getValue(CFN_PARAM(cfn))),
+                                        MODEL_GVAR_MAX(CFN_GVAR_INDEX(cfn))),
+                        mixerCurrentFlightMode);
+              else
+                SET_GVAR(CFN_GVAR_INDEX(cfn),
+                        limit<int16_t>(MODEL_GVAR_MIN(CFN_GVAR_INDEX(cfn)),
+                                        getValue(CFN_PARAM(cfn)),
+                                        MODEL_GVAR_MAX(CFN_GVAR_INDEX(cfn))),
+                        mixerCurrentFlightMode);
             }
             break;
 #endif
 
+#if defined(AUDIO)
           case FUNC_VOLUME: {
             getvalue_t raw = getValue(CFN_PARAM(cfn));
             // only set volume if input changed more than hysteresis
@@ -284,8 +325,8 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
                 2048;
             break;
           }
+#endif
 
-#if defined(SDCARD)
           case FUNC_PLAY_SOUND:
           case FUNC_PLAY_TRACK:
           case FUNC_PLAY_VALUE:
@@ -326,56 +367,31 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
             newActiveFunctions |= (1 << FUNCTION_BACKGND_MUSIC_PAUSE);
             break;
 
-#else
-          case FUNC_PLAY_SOUND:
-          case FUNC_PLAY_TRACK:
-          case FUNC_PLAY_BOTH:
-          case FUNC_PLAY_VALUE: {
-            tmr10ms_t tmr10ms = get_tmr10ms();
-            uint8_t repeatParam = CFN_PLAY_REPEAT(cfn);
-            if (!functionsContext.lastFunctionTime[i] ||
-                (CFN_FUNC(cfn) == FUNC_PLAY_BOTH &&
-                 active !=
-                     (bool)(functionsContext.activeSwitches & switch_mask)) ||
-                (repeatParam &&
-                 (signed)(tmr10ms - functionsContext.lastFunctionTime[i]) >=
-                     1000 * repeatParam)) {
-              functionsContext.lastFunctionTime[i] = tmr10ms;
-              uint8_t param = CFN_PARAM(cfn);
-              if (CFN_FUNC(cfn) == FUNC_PLAY_SOUND) {
-                AUDIO_PLAY(AU_SPECIAL_SOUND_FIRST + param);
-              } else if (CFN_FUNC(cfn) == FUNC_PLAY_VALUE) {
-                PLAY_VALUE(param, PLAY_INDEX);
-              } else {
-#if defined(GVARS)
-                if (CFN_FUNC(cfn) == FUNC_PLAY_TRACK && param > 250)
-                  param = GVAR_VALUE(
-                      param - 251,
-                      getGVarFlightMode(mixerCurrentFlightMode, param - 251));
-#endif
-                PUSH_CUSTOM_PROMPT(active ? param : param + 1, PLAY_INDEX);
-              }
-            }
-            if (!active) {
-              // PLAY_BOTH would change activeFnSwitches otherwise
-              switch_mask = 0;
-            }
-            break;
-          }
-#endif
-
 #if defined(VARIO)
           case FUNC_VARIO:
             newActiveFunctions |= (1u << FUNCTION_VARIO);
             break;
 #endif
 
-#if defined(SDCARD)
           case FUNC_LOGS:
             if (CFN_PARAM(cfn)) {
               newActiveFunctions |= (1u << FUNCTION_LOGS);
               logDelay100ms = CFN_PARAM(
                   cfn);  // logging period is 0..25.5s in 100ms increments
+            }
+            break;
+
+#if defined(FUNCTION_SWITCHES)
+          case FUNC_PUSH_CUST_SWITCH:
+            if (CFN_PARAM(cfn)) {   // Duration is set
+              if (! CFN_VAL2(cfn) ) { // Duration not started yet
+                CFN_VAL2(cfn) = timersGetMsTick() + CFN_PARAM(cfn) * 100;
+                g_model.cfsSetSFState(CFN_CS_INDEX(cfn), 1);
+              } else if (timersGetMsTick() < (uint32_t)CFN_VAL2(cfn) ) {  // Still within push duration
+                g_model.cfsSetSFState(CFN_CS_INDEX(cfn), 1);
+              }
+            } else { // No duration set
+              g_model.cfsSetSFState(CFN_CS_INDEX(cfn), 1);
             }
             break;
 #endif
@@ -389,9 +405,9 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
               break;
             }
 
-            getvalue_t raw = getValue(CFN_PARAM(cfn));
+            getvalue_t raw = limit(-RESX, (int)getValue(CFN_PARAM(cfn)), RESX);
 #if defined(COLORLCD)
-            requiredBacklightBright = BACKLIGHT_LEVEL_MAX - (g_eeGeneral.blOffBright + 
+            requiredBacklightBright = BACKLIGHT_LEVEL_MAX - (g_eeGeneral.blOffBright +
                 ((1024 + raw) * ((BACKLIGHT_LEVEL_MAX - g_eeGeneral.backlightBright) - g_eeGeneral.blOffBright) / 2048));
 #elif defined(OLED_SCREEN)
             requiredBacklightBright = (raw + 1024) * 254 / 2048;
@@ -424,14 +440,23 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
             newActiveFunctions |= (1u << FUNCTION_DISABLE_AUDIO_AMP);
             break;
 #endif
-#if defined(COLORLCD)
           case FUNC_SET_SCREEN:
             if (isRepeatDelayElapsed(functions, functionsContext, i)) {
               TRACE("SET VIEW %d", (CFN_PARAM(cfn)));
+#if defined(COLORLCD)
               int8_t screenNumber = max(0, CFN_PARAM(cfn) - 1);
               setRequestedMainView(screenNumber);
               mainRequestFlags |= (1u << REQUEST_MAIN_VIEW);
+#else
+              extern void showTelemScreen(uint8_t index);
+              showTelemScreen(CFN_PARAM(cfn));
+#endif
             }
+            break;
+#if defined(VIDEO_SWITCH)
+          case FUNC_LCD_TO_VIDEO:
+            switchToVideo();
+            videoEnabled = true;
             break;
 #endif
 #if defined(DEBUG)
@@ -443,6 +468,17 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
 
         newActiveSwitches |= switch_mask;
       } else {
+#if defined(FUNCTION_SWITCHES)
+        if (CFN_FUNC(cfn) == FUNC_PUSH_CUST_SWITCH) {
+          // Handling duration after function is active
+          if (timersGetMsTick() < (uint32_t)CFN_VAL2(cfn)) {
+            g_model.cfsSetSFState(CFN_CS_INDEX(cfn), 1);
+          }
+          else {
+            CFN_VAL2(cfn) = 0;
+          }
+        }
+#endif
         functionsContext.lastFunctionTime[i] = 0;
 #if defined(DANGEROUS_MODULE_FUNCTIONS)
         if (functionsContext.activeSwitches & switch_mask) {
@@ -462,6 +498,11 @@ void evalFunctions(const CustomFunctionData * functions, CustomFunctionsContext 
       }
     }
   }
+
+#if defined(VIDEO_SWITCH)
+  if (!videoEnabled)
+    switchToRadio();
+#endif
 
   functionsContext.activeSwitches   = newActiveSwitches;
   functionsContext.activeFunctions  = newActiveFunctions;
@@ -521,7 +562,11 @@ const char* funcGetLabel(uint8_t func)
   case FUNC_LOGS:
     return STR_SF_LOGS;
   case FUNC_BACKLIGHT:
+#if defined(OLED_SCREEN)
+    return STR_BRIGHTNESS;
+#else
     return STR_SF_BACKLIGHT;
+#endif
   case FUNC_SCREENSHOT:
     return STR_SF_SCREENSHOT;
   case FUNC_RACING_MODE:
@@ -529,15 +574,23 @@ const char* funcGetLabel(uint8_t func)
 #if defined(COLORLCD)
   case FUNC_DISABLE_TOUCH:
     return STR_SF_DISABLE_TOUCH;
+#endif
   case FUNC_SET_SCREEN:
     return STR_SF_SET_SCREEN;
-#endif
 #if defined(AUDIO_MUTE_GPIO)
-    case FUNC_DISABLE_AUDIO_AMP:
-      return STR_SF_DISABLE_AUDIO_AMP;
+  case FUNC_DISABLE_AUDIO_AMP:
+    return STR_SF_DISABLE_AUDIO_AMP;
 #endif
   case FUNC_RGB_LED:
     return STR_SF_RGBLEDS;
+#if defined(VIDEO_SWITCH)
+  case FUNC_LCD_TO_VIDEO:
+    return STR_SF_LCD_TO_VIDEO;
+#endif
+#if defined(FUNCTION_SWITCHES)
+  case FUNC_PUSH_CUST_SWITCH:
+    return STR_SF_PUSH_CUST_SWITCH;
+#endif
 #if defined(DEBUG)
   case FUNC_TEST:
     return STR_SF_TEST;

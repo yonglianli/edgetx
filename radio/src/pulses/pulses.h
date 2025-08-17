@@ -19,18 +19,20 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _PULSES_H_
-#define _PULSES_H_
+#pragma once
 
 #include "definitions.h"
 #include "dataconstants.h"
 #include "pulses_common.h"
-#include "modules_helpers.h"
 #include "hal/module_driver.h"
 
 #if defined(PXX2)
 #include "pxx2.h"
 #include "pxx2_ota.h"
+#endif
+
+#if defined(MULTIMODULE)
+#include "telemetry/multi.h"
 #endif
 
 #if defined(DSM2)
@@ -237,5 +239,3 @@ inline bool isModuleInBeepMode()
 
   return false;
 }
-
-#endif // _PULSES_H_

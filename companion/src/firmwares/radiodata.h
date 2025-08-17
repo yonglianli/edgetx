@@ -11,6 +11,8 @@
 // identiying names of static abstract item models
 constexpr char AIM_RADIO_MODEL_SORT_ORDER[]        {"radio.modelsortorder"};
 
+constexpr int LABEL_LENGTH = 16;
+
 class RadioDataConversionState;
 class AbstractStaticItemModel;
 
@@ -64,6 +66,8 @@ class RadioData {
     void setCurrentModel(unsigned int index);
     void fixModelFilenames();
     QString getNextModelFilename();
+    void validateModels();
+    int invalidModels();
 
     static QString modelSortOrderToString(int value);
     static AbstractStaticItemModel * modelSortOrderItemModel();

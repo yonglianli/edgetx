@@ -21,11 +21,15 @@
 
 #include "hal/switch_driver.h"
 #include "hal/adc_driver.h"
+#include "hal/rgbleds.h"
 
-#include "opentx.h"
+#include "myeeprom.h"
+#include "edgetx.h"
+#include "edgetx_constants.h"
+#include "os/sleep.h"
 #include "switches.h"
 #include "input_mapping.h"
-
+#include "inactivity_timer.h"
 #include "tasks/mixer_task.h"
 
 #define CS_LAST_VALUE_INIT -32768
@@ -50,7 +54,8 @@ enum LogicalSwitchContextState {
 PACK(struct LogicalSwitchContext {
   uint8_t state:1;
   uint8_t timerState:2;
-  uint8_t spare:5;
+  uint8_t spare:1;
+  uint8_t deltaTimer:4; // Timer for holding delta function state change active
   uint8_t timer;
   int16_t lastValue;
 });
@@ -83,96 +88,175 @@ uint8_t   potsPos[MAX_POTS];
 // Non pushed : SWSRC_Sx0 = -1024 = Sx(up) = state 0
 // Pushed : SWSRC_Sx2 = +1024 = Sx(down) = state 1
 
-uint8_t fsPreviousState = 0;
+uint16_t fsPreviousState = 0;
 
 void setFSStartupPosition()
 {
-  for (uint8_t i = 0; i < NUM_FUNCTIONS_SWITCHES; i++) {
-    uint8_t startPos = (g_model.functionSwitchStartConfig >> 2 * i) & 0x03;
-    switch(startPos) {
-      case FS_START_DOWN:
-        g_model.functionSwitchLogicalState &= ~(1 << i);   // clear state
-        break;
+  for (uint8_t i = 0; i < switchGetMaxSwitches(); i++) {
+    if (switchIsCustomSwitch(i)) {
+      uint8_t startPos = g_model.getSwitchStart(i);
+      if (g_model.getSwitchType(i) == SWITCH_TOGGLE)
+        startPos = FS_START_OFF;
+      switch(startPos) {
+        case FS_START_OFF:
+          g_model.cfsSetState(i, 0);
+          break;
 
-      case FS_START_UP:
-        g_model.functionSwitchLogicalState |= 1 << i;
-        break;
+        case FS_START_ON:
+          g_model.cfsSetState(i, 1);
+          break;
 
-      case FS_START_PREVIOUS:
-      default:
-        // Do nothing, use existing g_model.functionSwitchLogicalState value
-        break;
+        case FS_START_PREVIOUS:
+        default:
+          // Do nothing, use existing value
+          break;
+      }
     }
   }
 }
 
-uint8_t getFSLogicalState()
+void setFSLogicalState(uint8_t index, uint8_t value)
 {
-  return g_model.functionSwitchLogicalState;
+  g_model.cfsSetState(index, value ? 1 : 0);
 }
 
-uint8_t getFSLogicalState(uint8_t index)
+bool getFSPhysicalState(uint8_t index)
 {
-  return (uint8_t )(bfSingleBitGet(getFSLogicalState(), index) >> (index));
-}
+#if defined(FUNCTION_SWITCHES)
+  if (switchIsCustomSwitch(index) && g_model.cfsSFState(index))
+    return true;
+#endif
 
-uint8_t getFSPhysicalState(uint8_t index)
-{
-  index += switchGetMaxSwitches();
   return switchGetPosition(index) != SWITCH_HW_UP;
 }
 
-uint8_t getFSPreviousPhysicalState(uint8_t index)
+static bool getFSPreviousPhysicalState(uint8_t index)
 {
-  return (uint8_t )(bfSingleBitGet(fsPreviousState, index) >> (index));
+  return (uint8_t)(bfSingleBitGet(fsPreviousState, index) >> (index));
+}
+
+uint8_t getSwitchCountInFSGroup(uint8_t index)
+{
+  uint8_t count = 0;
+
+  for (uint8_t i = 0; i < switchGetMaxSwitches(); i++) {
+    if (switchIsCustomSwitch(i) && g_model.getSwitchGroup(i) == index)
+      count++;
+  }
+
+  return count;
+}
+
+bool isFSGroupUsed(uint8_t index)
+{
+  return getSwitchCountInFSGroup(index) != 0;
 }
 
 void evalFunctionSwitches()
 {
-  uint8_t fct_switches = switchGetMaxFctSwitches();
-  for (uint8_t i = 0; i < fct_switches; i++) {
-    if (FSWITCH_CONFIG(i) == SWITCH_NONE) {
-      fsLedOff(i);
-      continue;
-    }
-
-    uint8_t physicalState = getFSPhysicalState(i);
-    if (physicalState != getFSPreviousPhysicalState(i)) {
-      // FS was moved
-      if ((FSWITCH_CONFIG(i) == SWITCH_2POS && physicalState == 1) ||
-          (FSWITCH_CONFIG(i) == SWITCH_TOGGLE)) {
-        if (IS_FSWITCH_GROUP_ON(FSWITCH_GROUP(i)) != 0) {
-          // In an always on group
-          g_model.functionSwitchLogicalState |= 1 << i;  // Set bit
-        } else {
-          g_model.functionSwitchLogicalState ^= 1 << i;  // Toggle bit
-        }
+  for (uint8_t i = 0; i < switchGetMaxSwitches(); i++) {
+    if (switchIsCustomSwitch(i)) {
+      if (g_model.getSwitchType(i) == SWITCH_NONE) {
+        continue;
       }
 
-      if (FSWITCH_GROUP(i) && physicalState == 1) {
-        // switch is in a group, other in group need to be turned off
-        for (uint8_t j = 0; j < NUM_FUNCTIONS_SWITCHES; j++) {
-          if (i == j) continue;
-          if (FSWITCH_GROUP(j) == FSWITCH_GROUP(i)) {
-            g_model.functionSwitchLogicalState &= ~(1 << j);  // clear state
+      bool physicalState = getFSPhysicalState(i);
+      if (physicalState != getFSPreviousPhysicalState(i)) {
+        // FS was moved
+        inactivityTimerReset(ActivitySource::MainControls);
+        if ((g_model.getSwitchType(i) == SWITCH_2POS && physicalState) ||
+            (g_model.getSwitchType(i) == SWITCH_TOGGLE)) {
+          if (g_model.cfsGroupAlwaysOn(g_model.getSwitchGroup(i)) != 0) {
+            // In an always on group
+            g_model.cfsSetState(i, 1);
+          } else {
+            g_model.cfsSetState(i, g_model.cfsState(i) ^ 1); // Toggle bit
           }
         }
+
+        if (g_model.getSwitchGroup(i) && physicalState) {
+          // switch is in a group, other in group need to be turned off
+          for (uint8_t j = 0; j < switchGetMaxSwitches(); j++) {
+            if ((i != j) && switchIsCustomSwitch(j)) {
+              if (g_model.getSwitchGroup(j) == g_model.getSwitchGroup(i)) {
+                g_model.cfsSetState(j, 0);
+              }
+            }
+          }
+        }
+
+        fsPreviousState ^= 1 << i;  // Toggle state
+        storageDirty(EE_MODEL);
       }
 
-      fsPreviousState ^= 1 << i;  // Toggle state
-      storageDirty(EE_MODEL);
-    }
-
-    if (!pwrPressed()) {
-      if (getFSLogicalState(i))
-        fsLedOn(i);
-      else
-        fsLedOff(i);
+      if (!pwrPressed()) {
+        if (g_model.cfsState(i))
+          setFSLedON(i);
+        else
+          setFSLedOFF(i);
+      }
     }
   }
 }
-#else
-uint8_t getFSLogicalState(uint8_t) { return false; }
+
+bool groupHasSwitchOn(uint8_t group)
+{
+  for (int j = 0; j < switchGetMaxSwitches(); j += 1)
+    if (switchIsCustomSwitch(j) && g_model.getSwitchGroup(j) == group && g_model.cfsState(j))
+      return true;
+  return false;
+}
+
+int firstSwitchInGroup(uint8_t group)
+{
+  for (int j = 0; j < switchGetMaxSwitches(); j += 1)
+    if (switchIsCustomSwitch(j) && g_model.getSwitchGroup(j) == group)
+      return j;
+  return -1;
+}
+
+int groupDefaultSwitch(uint8_t group)
+{
+  bool allOff = true;
+  for (int j = 0; j < switchGetMaxSwitches(); j += 1) {
+    if (switchIsCustomSwitch(j)) {
+      if (g_model.getSwitchGroup(j) == group) {
+        if (g_model.getSwitchStart(j) == FS_START_ON)
+          return j;
+        if (g_model.getSwitchStart(j) != FS_START_OFF)
+          allOff = false;
+      }
+    }
+  }
+  if (allOff)
+    return switchGetMaxSwitches();
+  return -1;
+}
+
+void setGroupSwitchState(uint8_t group)
+{
+  // Check rules for always on group
+  //  - Toggle switch type not valid, change all switches to 2POS
+  //  - One switch must be turned on, turn on first switch if needed
+  if (g_model.cfsGroupAlwaysOn(group)) {
+    for (int j = 0; j < switchGetMaxSwitches(); j += 1) {
+      if (switchIsCustomSwitch(j) && g_model.getSwitchGroup(j) == group) {
+        g_model.setSwitchType(j, SWITCH_2POS); // Toggle not valid
+      }
+    }
+    if (!groupHasSwitchOn(group)) {
+      int sw = firstSwitchInGroup(group);
+      if (sw >= 0)
+        setFSLogicalState(sw, 1); // Make sure a switch is on
+    }
+    if (groupDefaultSwitch(group) == switchGetMaxSwitches()) {
+      // Start state for all switches is off - set all to 'last'
+      for (int j = 0; j < switchGetMaxSwitches(); j += 1)
+        if (switchIsCustomSwitch(j) && g_model.getSwitchGroup(j) == group)
+          g_model.setSwitchStart(j, FS_START_PREVIOUS);
+    }
+  }
+}
 #endif // FUNCTION_SWITCHES
 
 div_t switchInfo(int switchPosition)
@@ -187,9 +271,9 @@ int switchLookupIdx(char c)
       idx = 2; // SWx
   }
 
-  auto max_switches = switchGetMaxSwitches() + switchGetMaxFctSwitches();
+  auto max_switches = switchGetMaxAllSwitches();
   for (int i = 0; i < max_switches; i++) {
-    const char *name = switchGetName(i);
+    const char *name = switchGetDefaultName(i);
     if (name[idx] == c) return i;
   }
 
@@ -200,9 +284,9 @@ int switchLookupIdx(const char* name, size_t len)
 {
   if (len < 2 || (name[0] != 'S' && name[0] != 'F')) return -1;
 
-  auto max_switches = switchGetMaxSwitches() + switchGetMaxFctSwitches();
+  auto max_switches = switchGetMaxAllSwitches();
   for (int i = 0; i < max_switches; i++) {
-    const char *sw_name = switchGetCanonicalName(i);
+    const char *sw_name = switchGetDefaultName(i);
     if (strncmp(sw_name, name, len) == 0) return i;
   }
 
@@ -211,39 +295,20 @@ int switchLookupIdx(const char* name, size_t len)
 
 char switchGetLetter(uint8_t idx)
 {
-  if (idx >= switchGetMaxSwitches() + switchGetMaxFctSwitches())
+  if (idx >= switchGetMaxAllSwitches() + MAX_FLEX_SWITCHES)
     return -1;
-
-  uint8_t c = 1;
-  if (idx >= switchGetMaxSwitches()) c = 2;
   
-  const char* name = switchGetName(idx);
+  const char* name = switchGetDefaultName(idx);
   if (!name) return -1;
   
-  return name[c];
+  return name[strlen(name) - 1];
 }
 
-static char _switchNames[MAX_SWITCHES][LEN_SWITCH_NAME + 1] = { 0 };
-
-void switchSetCustomName(uint8_t idx, const char* str, size_t len)
+const char* fsSwitchGroupGetCanonicalName(uint8_t idx)
 {
-  strncpy(_switchNames[idx], str, min<size_t>(LEN_SWITCH_NAME, len));
-  _switchNames[idx][LEN_SWITCH_NAME] = '\0';  
-}
+  static const char fsgroupname[3][4] = {"GR1", "GR2", "GR3"};
 
-const char* switchGetCustomName(uint8_t idx)
-{
-  return _switchNames[idx];
-}
-
-bool switchHasCustomName(uint8_t idx)
-{
-  return *switchGetCustomName(idx) != 0;
-}
-
-const char* switchGetCanonicalName(uint8_t idx)
-{
-  return switchGetName(idx);
+  return &fsgroupname[idx][0];
 }
 
 SwitchConfig switchGetMaxType(uint8_t idx)
@@ -303,7 +368,7 @@ static uint64_t checkSwitchPosition(uint8_t idx, bool startup)
 void getSwitchesPosition(bool startup)
 {
   uint64_t newPos = 0;
-  for (unsigned i = 0; i < switchGetMaxSwitches(); i++) {
+  for (unsigned i = 0; i < switchGetMaxAllSwitches(); i++) {
     if (!SWITCH_EXISTS(i)) continue;
     newPos |= checkSwitchPosition(i, startup);
   }
@@ -344,7 +409,7 @@ void getSwitchesPosition(bool startup)
 uint8_t getSwitchCount()
 {
   int count = 0;
-  for (int i = 0; i < switchGetMaxSwitches(); ++i) {
+  for (int i = 0; i < switchGetMaxAllSwitches(); ++i) {
     if (SWITCH_EXISTS(i)) {
       ++count;
     }
@@ -352,10 +417,11 @@ uint8_t getSwitchCount()
   return count;
 }
 
+#if !defined(COLORLCD)
 uint8_t switchGetMaxRow(uint8_t col)
 {
   uint8_t lastrow = 0;
-  for (int i = 0; i < switchGetMaxSwitches(); ++i) {
+  for (int i = 0; i < switchGetMaxAllSwitches(); ++i) {
     if (SWITCH_EXISTS(i)) {
       auto switch_display = switchGetDisplayPosition(i);
       if (switch_display.col == col)
@@ -364,6 +430,7 @@ uint8_t switchGetMaxRow(uint8_t col)
   }
   return lastrow;
 }
+#endif
 
 getvalue_t getValueForLogicalSwitch(mixsrc_t i)
 {
@@ -391,9 +458,25 @@ PACK(typedef struct {
   uint16_t duration:15;
 }) ls_stay_struct;
 
+bool getLSStickyState(uint8_t idx)
+{
+  return lswFm[mixerCurrentFlightMode].lsw[idx].lastValue & 1;
+}
+
+void logicalSwitchesInit(bool force)
+{
+  for (unsigned int idx=0; idx<MAX_LOGICAL_SWITCHES; idx++) {
+    LogicalSwitchData * ls = lswAddress(idx);
+    if (ls->func == LS_FUNC_STICKY && (force || ls->lsPersist)) {
+      lswFm[mixerCurrentFlightMode].lsw[idx].lastValue = ls->lsState;
+    }
+  }
+}
+
 bool getLogicalSwitch(uint8_t idx)
 {
   LogicalSwitchData * ls = lswAddress(idx);
+  LogicalSwitchContext &context = lswFm[mixerCurrentFlightMode].lsw[idx];
   bool result;
 
   swsrc_t s = ls->andsw;
@@ -401,7 +484,7 @@ bool getLogicalSwitch(uint8_t idx)
   if (ls->func == LS_FUNC_NONE || (s && !getSwitch(s))) {
     if (ls->func != LS_FUNC_STICKY && ls->func != LS_FUNC_EDGE ) {
       // AND switch must not affect STICKY and EDGE processing
-      LS_LAST_VALUE(mixerCurrentFlightMode, idx) = CS_LAST_VALUE_INIT;
+      context.lastValue = CS_LAST_VALUE_INIT;
     }
     result = false;
   }
@@ -422,13 +505,13 @@ bool getLogicalSwitch(uint8_t idx)
     }
   }
   else if (s == LS_FAMILY_TIMER) {
-    result = (LS_LAST_VALUE(mixerCurrentFlightMode, idx) <= 0);
+    result = (context.lastValue <= 0);
   }
   else if (s == LS_FAMILY_STICKY) {
-    result = (LS_LAST_VALUE(mixerCurrentFlightMode, idx) & (1<<0));
+    result = (context.lastValue & (1<<0));
   }
   else if (s == LS_FAMILY_EDGE) {
-    result = (LS_LAST_VALUE(mixerCurrentFlightMode, idx) & (1<<0));
+    result = (context.lastValue & (1<<0));
   }
   else {
     getvalue_t x = getValueForLogicalSwitch(ls->v1);
@@ -494,10 +577,10 @@ bool getLogicalSwitch(uint8_t idx)
           break;
         default:
         {
-          if (LS_LAST_VALUE(mixerCurrentFlightMode, idx) == CS_LAST_VALUE_INIT) {
-            LS_LAST_VALUE(mixerCurrentFlightMode, idx) = x;
+          if (context.lastValue == CS_LAST_VALUE_INIT) {
+            context.lastValue = x;
           }
-          int16_t diff = x - LS_LAST_VALUE(mixerCurrentFlightMode, idx);
+          int16_t diff = x - context.lastValue;
           bool update = false;
           if (ls->func == LS_FUNC_DIFFEGREATER) {
             if (y >= 0) {
@@ -514,8 +597,15 @@ bool getLogicalSwitch(uint8_t idx)
           else {
             result = (abs(diff) >= y);
           }
+          if (result) {
+            context.deltaTimer = 10;
+          } else if (context.deltaTimer > 0) {
+            // Hold active state for 100ms to ensure state change is seen
+            context.deltaTimer -= 1;
+            result = true;
+          }
           if (result || update) {
-            LS_LAST_VALUE(mixerCurrentFlightMode, idx) = x;
+            context.lastValue = x;
           }
           break;
         }
@@ -526,7 +616,6 @@ bool getLogicalSwitch(uint8_t idx)
 DurationAndDelayProcessing:
 
     if (ls->delay || ls->duration) {
-      LogicalSwitchContext &context = lswFm[mixerCurrentFlightMode].lsw[idx];
       if (result) {
         if (context.timerState == SWITCH_START) {
           // set delay timer
@@ -588,24 +677,29 @@ bool getSwitch(swsrc_t swtch, uint8_t flags)
   else if (cs_idx <= SWSRC_LAST_SWITCH) {
     cs_idx -= SWSRC_FIRST_SWITCH;
 #if defined(FUNCTION_SWITCHES)
-    auto max_reg_pos = switchGetMaxSwitches() * 3;
-    if (cs_idx >= max_reg_pos && cs_idx - max_reg_pos < switchGetMaxFctSwitches() * 3) {
-      cs_idx -= max_reg_pos;
-      div_t qr = div(cs_idx, 3);
-      auto value = getFSLogicalState(qr.quot);
+    div_t qr = div(cs_idx, 3);
+    if (switchIsCustomSwitch(qr.quot)) {
+      auto value = g_model.cfsState(qr.quot);
       result = qr.rem == 0 ? !value : (qr.rem == 2 ? value : false);
     } else
 #endif
     {
-      if (flags & GETSWITCH_MIDPOS_DELAY) {
-        result = SWITCH_POSITION(cs_idx);
-      } else {
-        div_t qr = div(cs_idx, 3);
-        if (SWITCH_EXISTS(qr.quot)) {
-          result = switchState(cs_idx);
+      div_t qr = div(cs_idx, 3);
+      if (SWITCH_EXISTS(qr.quot)) {
+        auto sw_cfg = g_model.getSwitchType(qr.quot);
+        if (flags & GETSWITCH_MIDPOS_DELAY) {
+          result = SWITCH_POSITION(cs_idx);
+          // Handle 2POS switch installed in 3POS slot
+          if (!result && qr.rem == SWITCH_HW_DOWN && (sw_cfg == SWITCH_2POS || sw_cfg == SWITCH_TOGGLE))
+            result = SWITCH_POSITION(cs_idx - 1);
         } else {
-          result = false;
+          result = switchState(cs_idx);
+          // Handle 2POS switch installed in 3POS slot
+          if (!result && qr.rem == SWITCH_HW_DOWN && (sw_cfg == SWITCH_2POS || sw_cfg == SWITCH_TOGGLE))
+            result = switchState(cs_idx - 1);
         }
+      } else {
+         result = false;
       }
     }
   }
@@ -672,6 +766,10 @@ void evalLogicalSwitches(bool isCurrentFlightmode)
       }
     }
     context.state = result;
+    if ((g_model.logicalSw[idx].func == LS_FUNC_STICKY) && (g_model.logicalSw[idx].lsState != result)) {
+      g_model.logicalSw[idx].lsState = result;
+      storageDirty(EE_MODEL);
+    }
   }
 }
 
@@ -687,7 +785,6 @@ static inline uint8_t _bits_set(uint8_t val, uint8_t bits)
 }
 
 swarnstate_t switches_states = 0;
-uint8_t fsswitches_states = 0;
 
 swsrc_t getMovedSwitch()
 {
@@ -695,39 +792,27 @@ swsrc_t getMovedSwitch()
   swsrc_t result = 0;
 
   // Switches
-  auto max_reg_switches = switchGetMaxSwitches();
-  for (uint8_t i = 0; i < max_reg_switches; i++) {
+  auto max_switches = switchGetMaxAllSwitches();
+  for (uint8_t i = 0; i < max_switches; i++) {
     if (SWITCH_EXISTS(i)) {
-      swarnstate_t mask = ((swarnstate_t) 0x07 << (i * 3));
-      uint8_t prev = (switches_states & mask) >> (i * 3);
-      uint8_t next = (1024 + getValue(MIXSRC_FIRST_SWITCH + i)) / 1024 + 1;
+      swarnstate_t mask = ((swarnstate_t) 0x03 << (i * 2));
+      uint8_t prev = (switches_states & mask) >> (i * 2);
+      uint8_t next;
+#if defined(FUNCTION_SWITCHES)
+      if (switchIsCustomSwitch(i))
+        next = g_model.cfsState(i) ? 3 : 1;
+      else
+        next = (1024 + getValue(MIXSRC_FIRST_SWITCH + i)) / 1024 + 1;
+#else
+      next = (1024 + getValue(MIXSRC_FIRST_SWITCH + i)) / 1024 + 1;
+#endif
       if (prev != next) {
         switches_states =
-            (switches_states & (~mask)) | ((swarnstate_t)(next) << (i * 3));
+            (switches_states & (~mask)) | ((swarnstate_t)(next) << (i * 2));
         result = (3 * i) + next;
       }
     }
   }
-
-#if defined(FUNCTION_SWITCHES)
-  auto fsswitches_cur_state = getFSLogicalState();
-  auto fsswitches_xor = fsswitches_cur_state ^ fsswitches_states;
-  fsswitches_states = fsswitches_cur_state;
-
-  if (fsswitches_xor) {
-    // we have some change...
-    if (_bits_set(fsswitches_xor, switchGetMaxFctSwitches()) > 1) {
-      // multiple bits change: use the one that turned ON
-      fsswitches_xor &= fsswitches_cur_state;
-    } else {
-      // only one bit changed: use the one that changed
-    }
-
-    auto sw = __builtin_ctz(fsswitches_xor);
-    auto pos = (fsswitches_cur_state & fsswitches_xor) ? 2 : 0;
-    result = (max_reg_switches + sw) * 3 + pos + SWSRC_FIRST_SWITCH;
-  }
-#endif
 
   // Multipos
   for (int i = 0; i < MAX_POTS; i++) {
@@ -752,17 +837,18 @@ swsrc_t getMovedSwitch()
 
 bool isSwitchWarningRequired(uint16_t &bad_pots)
 {
-  swarnstate_t states = g_model.switchWarningState;
-
   if (!mixerTaskRunning()) getADC();
   getMovedSwitch();
 
   bool warn = false;
-  for (int i = 0; i < switchGetMaxSwitches(); i++) {
+  for (int i = 0; i < switchGetMaxAllSwitches(); i++) {
     if (SWITCH_WARNING_ALLOWED(i)) {
-      swarnstate_t mask = ((swarnstate_t)0x07 << (i * 3));
-      if ((states & mask) && !((states & mask) == (switches_states & mask))) {
-        warn = true;
+      uint8_t warnState = g_model.getSwitchWarning(i);
+      if (warnState) {
+        swarnstate_t swState = g_model.getSwitchStateForWarning(i);
+        if (warnState != swState) {
+          warn = true;
+        }
       }
     }
   }
@@ -801,7 +887,6 @@ void checkSwitches()
 void checkSwitches()
 {
   swarnstate_t last_bad_switches = 0xff;
-  swarnstate_t states = g_model.switchWarningState;
   uint16_t bad_pots = 0, last_bad_pots = 0xff;
 
 #if defined(PWR_BUTTON_PRESS)
@@ -813,6 +898,7 @@ void checkSwitches()
     if (!isSwitchWarningRequired(bad_pots))
       break;
 
+    cancelSplash();
     LED_ERROR_BEGIN();
     resetBacklightTimeout();
 
@@ -825,17 +911,16 @@ void checkSwitches()
       int x = SWITCH_WARNING_LIST_X;
       int y = SWITCH_WARNING_LIST_Y;
       int numWarnings = 0;
-      for (int i = 0; i < switchGetMaxSwitches(); ++i) {
+      for (int i = 0; i < switchGetMaxAllSwitches(); ++i) {
         if (SWITCH_WARNING_ALLOWED(i)) {
-          swarnstate_t mask = ((swarnstate_t)0x07 << (i*3));
-          if (states & mask) {
-            LcdFlags attr =
-                ((states & mask) == (switches_states & mask)) ? 0 : INVERS;
-            if (attr) {
+          uint8_t warnState = g_model.getSwitchWarning(i);
+          if (warnState) {
+            swarnstate_t swState = g_model.getSwitchStateForWarning(i);
+            if (warnState != swState) {
               if (++numWarnings < 6) {
-                const char* s = getSwitchWarnSymbol((states & mask) >> (i * 3));
-                drawSource(x, y, MIXSRC_FIRST_SWITCH + i, attr);
-                lcdDrawText(lcdNextPos, y, s, attr);
+                const char* s = getSwitchWarnSymbol(warnState);
+                drawSource(x, y, MIXSRC_FIRST_SWITCH + i, INVERS);
+                lcdDrawText(lcdNextPos, y, s, INVERS);
                 x = lcdNextPos + 3;
               }
             }
@@ -909,8 +994,7 @@ void checkSwitches()
     checkBacklight();
 
     WDG_RESET();
-
-    RTOS_WAIT_MS(10);
+    sleep_ms(10);
   }
 
   LED_ERROR_END();
@@ -951,20 +1035,15 @@ void logicalSwitchesTimerTick()
     for (uint8_t i=0; i<MAX_LOGICAL_SWITCHES; i++) {
       LogicalSwitchData * ls = lswAddress(i);
       if (ls->func == LS_FUNC_TIMER) {
-        int16_t * lastValue = &LS_LAST_VALUE(fm, i);
+        int16_t *lastValue = &LS_LAST_VALUE(fm, i);
         if (*lastValue == 0 || *lastValue == CS_LAST_VALUE_INIT) {
           *lastValue = -lswTimerValue(ls->v1);
+        } else if (*lastValue < 0) {
+          if (++(*lastValue) == 0) *lastValue = lswTimerValue(ls->v2);
+        } else {  // if (*lastValue > 0)
+          if (--(*lastValue) == 0) *lastValue = -lswTimerValue(ls->v1);
         }
-
-        else if (*lastValue < 0) {
-          if (++(*lastValue) == 0)
-            *lastValue = lswTimerValue(ls->v2);
-        }
-        else { // if (*lastValue > 0)
-          *lastValue -= 1;
-        }
-      }
-      else if (ls->func == LS_FUNC_STICKY) {
+      } else if (ls->func == LS_FUNC_STICKY) {
         ls_sticky_struct & lastValue = (ls_sticky_struct &)LS_LAST_VALUE(fm, i);
         bool before = lastValue.last & 0x01;
         if (lastValue.state) {
@@ -989,8 +1068,7 @@ void logicalSwitchesTimerTick()
                 }
             }
         }
-      }
-      else if (ls->func == LS_FUNC_EDGE) {
+      } else if (ls->func == LS_FUNC_EDGE) {
         ls_stay_struct & lastValue = (ls_stay_struct &)LS_LAST_VALUE(fm, i);
         // if this ls was reset by the logicalSwitchesReset() the lastValue will be set to CS_LAST_VALUE_INIT(0x8000)
         // when it is unpacked into ls_stay_struct the lastValue.duration will have a value of 0x4000
@@ -1076,4 +1154,19 @@ getvalue_t convertLswTelemValue(LogicalSwitchData * ls)
 void logicalSwitchesCopyState(uint8_t src, uint8_t dst)
 {
   lswFm[dst] = lswFm[src];
+}
+
+void setAllPreflightSwitchStates()
+{
+  getMovedSwitch();
+  // Mask switches enabled for warnings
+  swarnstate_t sw_mask = 0;
+  for(uint8_t i = 0; i < switchGetMaxAllSwitches(); i++) {
+    if (SWITCH_WARNING_ALLOWED(i))
+      if (g_model.getSwitchWarning(i))
+        sw_mask |= (0x03 << (2 * i));
+  }
+  g_model.switchWarning = switches_states & sw_mask;
+  AUDIO_WARNING1();
+  storageDirty(EE_MODEL);
 }

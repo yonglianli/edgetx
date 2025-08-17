@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -46,7 +47,8 @@ class LcdWidget : public QWidget
       QWidget(parent),
       localBuf(NULL),
       lightEnable(false),
-      bgDefaultColor(QColor(198, 208, 199))
+      bgDefaultColor(QColor(148, 156, 149)),
+      fgDefaultColor(QColor(0, 0, 0))
   {
   }
 
@@ -59,6 +61,7 @@ class LcdWidget : public QWidget
 
   void setData(int width, int height, int depth = 1);
   void setBgDefaultColor(const QColor &color);
+  void setFgDefaultColor(const QColor &color);
   void setBackgroundColor(const QColor &color);
 
   void makeScreenshot(const QString &fileName);
@@ -79,6 +82,7 @@ class LcdWidget : public QWidget
   bool lightEnable;
   QColor bgColor;
   QColor bgDefaultColor;
+  QColor fgDefaultColor;
   QMutex lcdMtx;
   QElapsedTimer redrawTimer;
 

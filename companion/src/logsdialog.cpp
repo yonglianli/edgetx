@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -79,8 +80,7 @@ LogsDialog::LogsDialog(QWidget *parent) :
   timeTicker->setDateTimeFormat("hh:mm:ss.zzz");
   axisRect->axis(QCPAxis::atBottom)->setTicker(timeTicker);
   QDateTime now = QDateTime::currentDateTime();
-  axisRect->axis(QCPAxis::atBottom)->setRange(now.addSecs(-60 * 60 * 2).toTime_t(), now.toTime_t());
-
+  axisRect->axis(QCPAxis::atBottom)->setRange(now.addSecs(-60 * 60 * 2).toMSecsSinceEpoch(), now.toMSecsSinceEpoch());
   axisRect->axis(QCPAxis::atLeft)->setTickLabels(false);
   axisRect->addAxis(QCPAxis::atLeft);
   axisRect->addAxis(QCPAxis::atRight);
@@ -243,7 +243,7 @@ void LogsDialog::selectionChanged()
     if (item == NULL) item = rightLegend->itemWithPlottable(graph);
     if (item->selected() || graph->selected()) {
       item->setSelected(true);
-      graph->setSelection(QCPDataSelection(QCPDataRange()));
+      graph->setSelection(QCPDataSelection(graph->data()->dataRange()));
     }
   }
 }
@@ -848,7 +848,7 @@ void LogsDialog::plotLogs()
     rowCount = ui->logTable->rowCount();
   }
 
-  plots.min_x = QDateTime::currentDateTime().toTime_t();
+  plots.min_x = INVALID_MIN;
   plots.max_x = 0;
 
   foreach (QTableWidgetItem *plot, ui->FieldsTW->selectedItems()) {
@@ -883,16 +883,19 @@ void LogsDialog::plotLogs()
       if (plotCoords.max_y < y) plotCoords.max_y = y;
 
       if (time_str.contains('.')) {
-        time = QDateTime::fromString(time_str, "yyyy-MM-dd HH:mm:ss.zzz")
-          .toTime_t();
+        time = QDateTime::fromString(time_str, "yyyy-MM-dd HH:mm:ss.zzz").toMSecsSinceEpoch();
         time += time_str.mid(time_str.indexOf('.')).toDouble();
       } else {
-        time = QDateTime::fromString(time_str, "yyyy-MM-dd HH:mm:ss")
-          .toTime_t();
+        time = QDateTime::fromString(time_str, "yyyy-MM-dd HH:mm:ss").toMSecsSinceEpoch();
       }
+
       plotCoords.x.push_back(time);
 
-      if (plots.min_x > time) plots.min_x = time;
+      if(plots.min_x == INVALID_MIN)
+        plots.min_x = time;
+      else
+        if (plots.min_x > time) plots.min_x = time;
+
       if (plots.max_x < time) plots.max_x = time;
     }
 

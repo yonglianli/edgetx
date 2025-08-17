@@ -1,6 +1,6 @@
 set(CPU_FAMILY STM32)
 set(MCU cortex-m3)
-set(FPU_FLAGS "")
+set(FPU_FLAGS "-mfloat-abi=soft")
 
 if(NOT NATIVE_BUILD)
 
@@ -33,6 +33,8 @@ if(NOT NATIVE_BUILD)
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_i2c.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_pcd.c
     ${STM32CUBE_DIR}/Src/stm32f2xx_hal_pcd_ex.c
+    ${STM32CUBE_DIR}/Src/stm32f2xx_hal_flash.c
+    ${STM32CUBE_DIR}/Src/stm32f2xx_hal_flash_ex.c
     )
 
   target_compile_options(stm32cube_ll PRIVATE -DUSE_FULL_LL_DRIVER)
@@ -45,28 +47,22 @@ if(NOT NATIVE_BUILD)
 endif()
 
 # StdPeriph library
-set(STM32LIB_DIR ${THIRDPARTY_DIR}/STM32F2xx_StdPeriph_Lib_V1.1.0/Libraries)
-include_directories(${STM32LIB_DIR}/STM32F2xx_StdPeriph_Driver/inc)
+set(STM32LIB_DIR ${THIRDPARTY_DIR})
 include_directories(${STM32LIB_DIR}/CMSIS/Device/ST/STM32F2xx/Include)
 include_directories(${STM32LIB_DIR}/CMSIS/Include)
 
 add_definitions(-DSTM32F2)
 
-set(STM32_STDPERIPH_DIR ${STM32LIB_DIR}/STM32F2xx_StdPeriph_Driver)
+add_library(cmsis INTERFACE)
 
-add_library(stm32_stdperiph OBJECT EXCLUDE_FROM_ALL
+target_sources(cmsis INTERFACE
   targets/common/arm/stm32/f2/system_stm32f2xx.c
   boards/generic_stm32/startup/startup_stm32f205xx.s
-  ${STM32_STDPERIPH_DIR}/src/misc.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f2xx_gpio.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f2xx_dbgmcu.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f2xx_rcc.c
-  )
-
-set(FIRMWARE_SRC ${FIRMWARE_SRC} $<TARGET_OBJECTS:stm32_stdperiph>)
-set(BOOTLOADER_SRC ${BOOTLOADER_SRC} $<TARGET_OBJECTS:stm32_stdperiph>)
+)
 
 if(NOT NATIVE_BUILD)
+  include_directories(targets/common/arm/stm32/f2)
+
   #
   # FreeRTOS port specific include
   #

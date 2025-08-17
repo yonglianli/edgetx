@@ -23,6 +23,9 @@
 #include "stm32_spi.h"
 #include "timers_driver.h"
 #include "delays_driver.h"
+#include "stm32_gpio.h"
+
+#include "stm32_hal_ll.h"
 
 #include "debug.h"
 #include "crc.h"
@@ -46,7 +49,11 @@
 #define INIT_CMD0_RETRY_US          (100UL)
 #define R1_POLLING_RETRY_US         (100 * US_PER_MS)
 #define SD_DATA_TOKEN_RETRY_US      (100 * US_PER_MS)
+#if defined(SD_LONG_BUSY_WAIT)
+#define SD_WAIT_FOR_NOT_BUSY_US     (500 * US_PER_MS)
+#else
 #define SD_WAIT_FOR_NOT_BUSY_US     (250 * US_PER_MS)
+#endif
 
 #define SD_BLOCK_READ_CMD_RETRY_US  (100UL)
 #define SD_BLOCK_WRITE_CMD_RETRY_US (100UL)
@@ -190,7 +197,7 @@ static uint8_t sdcard_spi_send_cmd(const stm32_spi_t* spi, uint8_t sd_cmd_idx,
       continue;
     }
 
-    if (_transfer_bytes(spi, cmd_data, 0, sizeof(cmd_data)) != sizeof(cmd_data)) {
+    if (_transfer_bytes(spi, cmd_data, nullptr, sizeof(cmd_data)) != sizeof(cmd_data)) {
       TRACE("sdcard_spi_send_cmd: _transfer_bytes: send cmd [%d]: [ERROR]",
             sd_cmd_idx);
       r1_resu = SD_INVALID_R1_RESPONSE;
@@ -240,6 +247,12 @@ static uint8_t sdcard_spi_send_acmd(const stm32_spi_t* spi, uint8_t sd_cmd_idx,
 static sd_rw_response_t _read_cid(const stm32_spi_t* spi, sdcard_info_t* card);
 static sd_rw_response_t _read_csd(const stm32_spi_t* spi, sdcard_info_t* card);
 
+static inline void _set_miso_pullup(gpio_t miso)
+{
+  uint32_t pin = 1 << gpio_get_pin(miso);
+  LL_GPIO_SetPinPull(gpio_get_port(miso), pin, LL_GPIO_PULL_UP);
+}
+
 static sd_init_fsm_state_t _init_sd_fsm_step(const stm32_spi_t* spi,
                                              sdcard_info_t* card,
                                              sd_init_fsm_state_t state)
@@ -247,8 +260,9 @@ static sd_init_fsm_state_t _init_sd_fsm_step(const stm32_spi_t* spi,
   switch (state) {
   case SD_INIT_START:
     TRACE("SD_INIT_START");
-    stm32_spi_init(spi);
+    stm32_spi_init(spi, LL_SPI_DATAWIDTH_8BIT);
     stm32_spi_set_max_baudrate(spi, SD_SPI_CLK_400K);
+    _set_miso_pullup(spi->MISO);
     return SD_INIT_SPI_POWER_SEQ;
 
   case SD_INIT_SPI_POWER_SEQ:
@@ -323,7 +337,7 @@ static sd_init_fsm_state_t _init_sd_fsm_step(const stm32_spi_t* spi,
 
         uint8_t r7[4];
 
-        if (_transfer_bytes(spi, 0, &r7[0], sizeof(r7)) == sizeof(r7)) {
+        if (_transfer_bytes(spi, nullptr, &r7[0], sizeof(r7)) == sizeof(r7)) {
           TRACE("R7 response: 0x%02x 0x%02x 0x%02x 0x%02x", r7[0], r7[1], r7[2], r7[3]);
           /* check if lower 12 bits (voltage range and check pattern) of
              response and arg are equal to verify compatibility and
@@ -404,7 +418,7 @@ static sd_init_fsm_state_t _init_sd_fsm_step(const stm32_spi_t* spi,
         card->card_type = SD_V2;
 
         uint8_t r3[4];
-        if (_transfer_bytes(spi, 0, r3, sizeof(r3)) == sizeof(r3)) {
+        if (_transfer_bytes(spi, nullptr, r3, sizeof(r3)) == sizeof(r3)) {
           uint32_t ocr = ((uint32_t)r3[0] << (3 * 8)) |
             ((uint32_t)r3[1] << (2 * 8)) | (r3[2] << 8) | r3[3];
           TRACE("R3 RESPONSE: 0x%02x 0x%02x 0x%02x 0x%02x",
@@ -526,7 +540,7 @@ static sd_rw_response_t _read_data_packet(const stm32_spi_t* spi, uint8_t token,
   if (stm32_spi_dma_receive_bytes(spi, data, size) == size) {
 
     uint8_t crc_bytes[2];
-    if (_transfer_bytes(spi, 0, crc_bytes, sizeof(crc_bytes)) == sizeof(crc_bytes)) {
+    if (_transfer_bytes(spi, nullptr, crc_bytes, sizeof(crc_bytes)) == sizeof(crc_bytes)) {
 
 #if defined(SD_CARD_SPI_ENABLE_CRC)
       uint16_t data_crc16 = (crc_bytes[0] << 8) | crc_bytes[1];
@@ -622,7 +636,7 @@ static sd_rw_response_t _write_data_packet(const stm32_spi_t* spi, uint8_t token
   uint8_t crc[sizeof(uint16_t)] = { 0xFF, 0xFF };
 #endif
 
-  if (_transfer_bytes(spi, crc, 0, sizeof(crc)) != sizeof(crc)) {
+  if (_transfer_bytes(spi, crc, nullptr, sizeof(crc)) != sizeof(crc)) {
     TRACE("_write_data_packet: [RX_TX_ERROR] (while transmitting CRC16)");
     return SD_RW_RX_TX_ERROR;
   }

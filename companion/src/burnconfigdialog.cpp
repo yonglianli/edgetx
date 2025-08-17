@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -77,7 +78,7 @@ void burnConfigDialog::getSettings()
     if ( sambaLoc.isEmpty())
       sambaLoc = QFileInfo("sam-ba.exe").absoluteFilePath();
     if ( dfuLoc.isEmpty())
-      dfuLoc =  QFileInfo("dfu-util.exe").absoluteFilePath();
+      dfuLoc =  QFileInfo("bin/dfu-util.exe").absoluteFilePath();
 #elif defined __APPLE__
     if ( sambaLoc.isEmpty())
       sambaLoc = "/usr/local/bin/sam-ba";

@@ -23,7 +23,7 @@
 #include <memory.h>
 
 #include "lcd.h"
-#include "thirdparty/libopenui/src/bitfield.h"
+#include "bitfield.h"
 #include "gui/common/stdlcd/fonts.h"
 #include "gui/common/stdlcd/utf8.h"
 
@@ -34,7 +34,7 @@
 #endif
 
 #if !defined(BOOT)
-  #include "opentx.h"
+  #include "edgetx.h"
   #include "hal/switch_driver.h"
   #include "hal/adc_driver.h"
   #include "switches.h"
@@ -162,70 +162,72 @@ uint8_t getPatternWidth(const PatternData * pattern)
 LcdFlags getCharPattern(PatternData * pattern, unsigned char c, LcdFlags flags)
 {
 #if !defined(BOOT)
+  static const uint8_t fontWidth[] = { 5, 3, 5, 8, 10, 22, 5 };
+  static const uint8_t fontHeight[] = { 7, 5, 6, 12, 16, 38, 7 };
+
   uint32_t fontsize = FONTSIZE(flags);
   unsigned char c_remapped = 0;
 
   if (fontsize == DBLSIZE || (flags & BOLD)) {
     // To save space only some DBLSIZE and BOLD chars are available
     // c has to be remapped. All non existing chars mapped to 0 (space)
-    if (c>=',' && c<=':')
+    if (c >= ',' && c <= ':')
       c_remapped = c - ',' + 1;
-    else if (c>='A' && c<='Z')
+    else if (c >= 'A' && c <= 'Z')
       c_remapped = c - 'A' + 16;
-    else if (c>='a' && c<='z')
+    else if (c >= 'a' && c <= 'z')
       c_remapped = c - 'a' + 42;
-    else if (c=='_')
+    else if (c == '_')
       c_remapped = 4;
-    else if (c!=' ')
-      flags &= ~BOLD;
+    else if (c != ' ')
+      flags &= ~BOLD; // For BOLD use Standard font if character is not in BOLD
   }
 
-  if (fontsize == DBLSIZE) {
-    pattern->width = 10;
-    pattern->height = 16;
-    if (c >= 0xC0) {
-      pattern->data = &font_10x14_extra[((uint16_t)(c-0xC0))*20];
-    }
-    else {
-      if (c >= 128)
-        c_remapped = c - 81;
-      pattern->data = &font_10x14[((uint16_t)c_remapped)*20];
-    }
-  }
-  else if (fontsize == XXLSIZE) {
-    pattern->width = 22;
-    pattern->height = 38;
-    pattern->data = &font_22x38_num[((uint16_t)c-'0'+5)*110];
-  }
-  else if (fontsize == MIDSIZE) {
-    pattern->width = 8;
-    pattern->height = 12;
-    pattern->data = &font_8x10[((uint16_t)c-0x20)*16];
-  }
-  else if (fontsize == SMLSIZE) {
-    pattern->width = 5;
-    pattern->height = 6;
-    pattern->data = (c < 0xc0 ? &font_4x6[(c-0x20)*5] : &font_4x6_extra[(c-0xc0)*5]);
-  }
-  else if (fontsize == TINSIZE) {
-    pattern->width = 3;
-    pattern->height = 5;
-    pattern->data = &font_3x5[((uint16_t)c-0x20)*3];
-  }
-  else if (flags & BOLD) {
-    pattern->width = 5;
-    pattern->height = 7;
-    pattern->data = &font_5x7_B[c_remapped*5];
-  }
-  else {
-    pattern->width = 5;
-    pattern->height = 7;
-    pattern->data = &font_5x7[(c - 0x20) * 5];
-  }
+  uint8_t fontIdx = fontsize >> 8;
+  if (fontIdx == 0 && flags & BOLD) fontIdx = 6;
+
+  pattern->width = fontWidth[fontIdx];
+  pattern->height = fontHeight[fontIdx];
+  int charSize = (pattern->height + 7) / 8 * pattern->width;
+
+  switch (fontIdx) {
+    case 0: // Standard
+      pattern->data = &font_5x7[(c - FONT_BASE_START) * charSize];
+      break;
+    case 1: // TINSIZE
+      pattern->data = &font_3x5[(c - FONT_BASE_START) * charSize];
+      break;
+    case 2: // SMLSIZE
+      // Adjust language special characters offset
+      if (c >= FONT_LANG_START)
+        c = c - (FONT_SYMS_CNT - FONT_SYMS_CNT_4x6);
+      pattern->data = &font_4x6[(c - FONT_BASE_START) * charSize];
+      break;
+    case 3: // MDLSIZE
+      // Adjust language special characters offset
+      if (c >= FONT_LANG_START)
+        c = c - FONT_SYMS_CNT;
+      pattern->data = &font_8x10[(c - FONT_BASE_START) * charSize];
+      break;
+    case 4: // DBLSIZE
+      // Adjust language special characters offset and symbols offset
+      if (c >= FONT_LANG_START)
+        c_remapped = c - (FONT_BASE_CNT - FONT_BASE_CNT_10x14) - (FONT_SYMS_CNT - FONT_SYMS_CNT_10x14) - FONT_BASE_START;
+      else if (c >= FONT_SYMS_START)
+        c_remapped = c - (FONT_BASE_CNT - FONT_BASE_CNT_10x14) - FONT_BASE_START;
+      pattern->data = &font_10x14[(c_remapped) * charSize];
+      break;
+    case 5: // XXLSIZE
+      pattern->data = &font_22x38_num[(c - '0' + 5) * charSize];
+      break;
+    case 6: // BOLD
+      pattern->data = &font_5x7_B[c_remapped * charSize];
+      break;
+  };
 #else
   pattern->width = 5;
   pattern->height = 7;
-  pattern->data = &font_5x7[(c-0x20)*5];
+  pattern->data = &font_5x7[(c - FONT_BASE_START) * 5];
 #endif
   return flags;
 }
@@ -240,14 +242,9 @@ uint8_t getCharWidth(char c, LcdFlags flags)
 void lcdDrawChar(coord_t x, coord_t y, uint8_t c, LcdFlags flags)
 {
   lcdNextPos = x - 1;
-#if defined(BOOT)
-  const uint8_t * data = &font_5x7[(c-0x20)*5];
-  lcdPutPattern(x, y, data, 5, 7, flags);
-#else
   PatternData pattern;
   flags = getCharPattern(&pattern, c, flags);
   lcdPutPattern(x, y, pattern.data, pattern.width, pattern.height, flags);
-#endif
 }
 
 void lcdDrawChar(coord_t x, coord_t y, uint8_t c)
@@ -260,11 +257,7 @@ uint8_t getTextWidth(const char * s, uint8_t len, LcdFlags flags)
   uint8_t width = 0;
   if (len == 0) len = strlen(s);
   while (len--) {
-#if !defined(BOOT)
     unsigned char c = map_utf8_char(s, len);
-#else
-    unsigned char c = *s;
-#endif
     if (!c) {
       break;
     }
@@ -376,6 +369,11 @@ void lcdDrawText(coord_t x, coord_t y, const char * s)
 void lcdDrawTextAlignedLeft(coord_t y, const char * s)
 {
   lcdDrawText(0, y, s);
+}
+
+void lcdDrawTextIndented(coord_t y, const char * s)
+{
+  lcdDrawText(INDENT_WIDTH, y, s);
 }
 
 #if !defined(BOOT)
@@ -515,18 +513,16 @@ void lcdDrawLine(coord_t x1, coord_t y1, coord_t x2, coord_t y2, uint8_t pat, Lc
 
 void lcdDrawVerticalLine(coord_t x, coord_t y, coord_t h, uint8_t pat, LcdFlags att)
 {
-  if (x >= LCD_W) return;
-  // should never happen on 9X
-  if (y >= LCD_H) return;
-
-  if (h<0) { y+=h; h=-h; }
-  if (y<0) { h+=y; y=0; }
-  if (y+h > LCD_H) { h = LCD_H - y; }
+  if (x < 0 || x >= LCD_W || h == 0) return;
+  if (h < 0) { y = y + h + 1; h = -h; }
+  if (y + h <= 0 || y >= LCD_H) return;
+  if (y < 0) { h += y; y = 0; }
+  if (y + h > LCD_H) { h = LCD_H - y; }
 
   if (pat==DOTTED && !(y%2))
     pat = ~pat;
 
-  uint8_t * p  = &displayBuf[ y / 8 * LCD_W + x ];
+  uint8_t * p = &displayBuf[ y / 8 * LCD_W + x ];
   y = (y & 0x07);
   if (y) {
     ASSERT_IN_DISPLAY(p);
@@ -664,39 +660,9 @@ void putsVBat(coord_t x, coord_t y, LcdFlags att)
   putsVolts(x, y, g_vbat100mV, att);
 }
 
-void drawSource(coord_t x, coord_t y, uint32_t idx, LcdFlags att)
+void putsChn(coord_t x, coord_t y, uint8_t idx, LcdFlags att)
 {
-  if (idx == MIXSRC_NONE) {
-    lcdDrawText(x, y, STR_EMPTY, att);
-  }
-  else if (idx <= MIXSRC_LAST_INPUT) {
-    lcdDrawChar(x+2, y+1, CHR_INPUT, TINSIZE);
-    lcdDrawSolidFilledRect(x, y, 7, 7);
-    if (g_model.inputNames[idx-MIXSRC_FIRST_INPUT][0])
-      lcdDrawSizedText(x+8, y, g_model.inputNames[idx-MIXSRC_FIRST_INPUT], LEN_INPUT_NAME, att);
-    else
-      lcdDrawNumber(x+8, y, idx, att|LEADING0|LEFT, 2);
-  }
-#if defined(LUA_INPUTS)
-  else if (idx <= MIXSRC_LAST_LUA) {
-    div_t qr = div(idx-MIXSRC_FIRST_LUA, MAX_SCRIPT_OUTPUTS);
-#if defined(LUA_MODEL_SCRIPTS)
-    if (qr.quot < MAX_SCRIPTS && qr.rem < scriptInputsOutputs[qr.quot].outputsCount) {
-      lcdDrawChar(x+2, y+1, '1'+qr.quot, TINSIZE);
-      lcdDrawFilledRect(x, y, 7, 7, 0);
-      lcdDrawSizedText(x+8, y, scriptInputsOutputs[qr.quot].outputs[qr.rem].name, att & STREXPANDED ? 9 : 4, att);
-    }
-    else
-#endif
-    {
-      drawStringWithIndex(x, y, "LUA", qr.quot+1, att);
-      lcdDrawChar(lcdLastRightPos, y, 'a' + qr.rem, att);
-    }
-  }
-#endif
-  else {
-    lcdDrawText(x, y, getSourceString(idx), att);
-  }
+  drawStringWithIndex(x, y, STR_CH, idx, att);
 }
 
 void putsChnLetter(coord_t x, coord_t y, uint8_t idx, LcdFlags att)
@@ -972,8 +938,11 @@ void lcdInvertLine(int8_t line)
 
 void lcdDrawHorizontalLine(coord_t x, coord_t y, coord_t w, uint8_t pat, LcdFlags att)
 {
-  if (y >= LCD_H) return;
-  if (x+w > LCD_W) { w = LCD_W - x; }
+  if (y < 0 || y >= LCD_H || w == 0) return;
+  if (w < 0) { x = x + w + 1; w = -w; }
+  if (x + w <= 0 || x >= LCD_W) return;
+  if (x < 0) { w += x; x = 0; }
+  if (x + w > LCD_W) { w = LCD_W - x; }
 
   uint8_t *p  = &displayBuf[ y / 8 * LCD_W + x ];
   uint8_t msk = bfBit<uint8_t>(y % 8);

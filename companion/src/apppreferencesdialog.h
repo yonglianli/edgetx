@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,6 +27,8 @@
 #include <QDialog>
 #include <QCheckBox>
 #include <QComboBox>
+
+class FilteredItemModelFactory;
 
 namespace Ui {
   class AppPreferencesDialog;
@@ -71,10 +74,12 @@ class AppPreferencesDialog : public QDialog
     void on_btn_appLogsDir_clicked();
     void on_btnClearPos_clicked();
 
-#if defined(JOYSTICKS)
+#if defined(USE_SDL)
     void on_joystickChkB_clicked();
     void on_joystickcalButton_clicked();
 #endif
+
+    void on_btnRadioColor_clicked();
 
   private:
     void initSettings();
@@ -93,6 +98,8 @@ class AppPreferencesDialog : public QDialog
     QCheckBox *chkCheckForUpdate[MAX_COMPONENTS];
     QComboBox *cboReleaseChannel[MAX_COMPONENTS];
     QPushButton *btnComponentOptions[MAX_COMPONENTS];
+
+    FilteredItemModelFactory *panelItemModels;
 
     void loadUpdatesTab();
 

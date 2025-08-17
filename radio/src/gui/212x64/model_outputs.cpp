@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 enum LimitsItems {
   ITEM_LIMITS_CH_NAME,
@@ -127,8 +127,8 @@ void menuModelLimits(event_t event)
       if (attr) {
         s_editMode = 0;
         if (event==EVT_KEY_LONG(KEY_ENTER)) {
-          START_NO_HIGHLIGHT();
           killEvents(event);
+          START_NO_HIGHLIGHT();
           moveTrimsToOffsets(); // if highlighted and menu pressed - move trims to offsets
         }
       }
@@ -146,13 +146,8 @@ void menuModelLimits(event_t event)
     int limit = (g_model.extendedLimits ? LIMIT_EXT_MAX : 1000);
 
     putsChn(0, y, k+1, (sub==k && menuHorizontalPosition < 0) ? INVERS : 0);
-    if (sub==k && menuHorizontalPosition < 0 && event==EVT_KEY_LONG(KEY_ENTER) && !READ_ONLY()) {
-      killEvents(event);
-      POPUP_MENU_ADD_ITEM(STR_RESET);
-      POPUP_MENU_ADD_ITEM(STR_COPY_TRIMS_TO_OFS);
-      POPUP_MENU_ADD_ITEM(STR_COPY_STICKS_TO_OFS);
-      POPUP_MENU_ADD_ITEM(STR_COPY_MIN_MAX_TO_OUTPUTS);
-      POPUP_MENU_START(onLimitsMenu);
+    if (sub==k && menuHorizontalPosition < 0 && event==EVT_KEY_LONG(KEY_ENTER)) {
+      POPUP_MENU_START(onLimitsMenu, 4, STR_RESET, STR_COPY_TRIMS_TO_OFS, STR_COPY_STICKS_TO_OFS, STR_COPY_MIN_MAX_TO_OUTPUTS);
     }
 
     for (int j=0; j<ITEM_LIMITS_COUNT; j++) {
@@ -166,7 +161,9 @@ void menuModelLimits(event_t event)
           break;
 
         case ITEM_LIMITS_OFFSET:
-          if (GV_IS_GV_VALUE(ld->offset, -1000, 1000) || (attr && event == EVT_KEY_LONG(KEY_ENTER))) {
+          if (GV_IS_GV_VALUE(ld->offset) || (attr && event == EVT_KEY_LONG(KEY_ENTER))) {
+            if (event == EVT_KEY_LONG(KEY_ENTER))
+              killEvents(event);
             ld->offset = GVAR_MENU_ITEM(LIMITS_OFFSET_POS, y, ld->offset, -1000, 1000, RIGHT|attr|PREC1, 0, event);
             break;
           }
@@ -180,13 +177,16 @@ void menuModelLimits(event_t event)
             ld->offset = checkIncDec(event, ld->offset, -1000, 1000, EE_MODEL, nullptr, stops1000);
           }
           else if (attr && event==EVT_KEY_LONG(KEY_MENU)) {
+            killEvents(event);
             copySticksToOffset(k);
             s_editMode = 0;
           }
           break;
 
         case ITEM_LIMITS_MIN:
-          if (GV_IS_GV_VALUE(ld->min, -GV_RANGELARGE, GV_RANGELARGE) || (attr && event == EVT_KEY_LONG(KEY_ENTER))) {
+          if (GV_IS_GV_VALUE(ld->min) || (attr && event == EVT_KEY_LONG(KEY_ENTER))) {
+            if (event == EVT_KEY_LONG(KEY_ENTER))
+              killEvents(event);
             ld->min = GVAR_MENU_ITEM(LIMITS_MIN_POS, y, ld->min, -LIMIT_EXT_MAX, LIMIT_EXT_MAX, attr|PREC1|RIGHT, 0, event);
             break;
           }
@@ -195,7 +195,9 @@ void menuModelLimits(event_t event)
           break;
 
         case ITEM_LIMITS_MAX:
-          if (GV_IS_GV_VALUE(ld->max, -GV_RANGELARGE, GV_RANGELARGE) || (attr && event == EVT_KEY_LONG(KEY_ENTER))) {
+          if (GV_IS_GV_VALUE(ld->max) || (attr && event == EVT_KEY_LONG(KEY_ENTER))) {
+            if (event == EVT_KEY_LONG(KEY_ENTER))
+              killEvents(event);
             ld->max = GVAR_MENU_ITEM(LIMITS_MAX_POS, y, ld->max, -LIMIT_EXT_MAX, LIMIT_EXT_MAX, attr|PREC1|RIGHT, 0, event);
             break;
           }

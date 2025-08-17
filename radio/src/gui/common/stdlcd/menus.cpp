@@ -19,15 +19,18 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 MenuHandlerFunc menuHandlers[5];
 event_t menuEvent = 0;
 uint8_t menuVerticalPositions[4];
+uint8_t menuVerticalOffsets[4];
 uint8_t menuLevel = 0;
 
 void popMenu()
 {
+  killEvents(KEY_EXIT);
+
   assert(menuLevel > 0);
   menuLevel = menuLevel - 1;
   menuEvent = EVT_ENTRY_UP;
@@ -44,6 +47,7 @@ void abortPopMenu()
 
 void chainMenu(MenuHandlerFunc newMenu)
 {
+  killAllEvents();
   menuHandlers[menuLevel] = newMenu;
   menuEvent = EVT_ENTRY;
   // TODO ? AUDIO_KEY_PRESS();
@@ -52,10 +56,10 @@ void chainMenu(MenuHandlerFunc newMenu)
 
 void pushMenu(MenuHandlerFunc newMenu)
 {
-  killEvents(KEY_ENTER);
+  killAllEvents();
 
   if (menuLevel == 0) {
-    if (newMenu == menuRadioSetup)
+    if (newMenu == menuTabGeneral[0].menuFunc)
       menuVerticalPositions[0] = 1;
     if (newMenu == menuModelSelect)
       menuVerticalPositions[0] = 0;
@@ -63,6 +67,7 @@ void pushMenu(MenuHandlerFunc newMenu)
   else {
     menuVerticalPositions[menuLevel] = menuVerticalPosition;
   }
+  menuVerticalOffsets[menuLevel] = menuVerticalOffset;
 
   menuLevel++;
 

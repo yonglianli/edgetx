@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,14 +19,15 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _RADIOSWITCHWIDGET_H_
-#define _RADIOSWITCHWIDGET_H_
+#pragma once
 
 #include "radiowidget.h"
 #include "boards.h"
 #include "simulator.h"
+#include "simulatorinterface.h"
 
 #include <QSlider>
+#include <QPushButton>
 #include <QTimer>
 #include <QToolButton>
 
@@ -143,7 +145,62 @@ class RadioSwitchWidget : public RadioWidget
 
     QSlider * m_slider;
     quint16 m_stepSize;
-
 };
 
-#endif // _RADIOSWITCHWIDGET_H_
+class RadioFuncSwitchWidget : public RadioWidget
+{
+  Q_OBJECT
+
+  public:
+
+    explicit RadioFuncSwitchWidget(SimulatorInterface *simulator, Board::SwitchType type, const QString & labelText, int value, QWidget * parent, Qt::WindowFlags f = Qt::WindowFlags()) :
+      RadioWidget(labelText, value, parent, f)
+    {
+      init(simulator, type);
+    }
+
+    void init(SimulatorInterface *simulator, Board::SwitchType swType)
+    {
+      m_type = RADIO_WIDGET_FUNC_SWITCH;
+
+      m_button = new QPushButton("");
+      m_button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+      m_button->setFixedWidth(30);
+
+      setWidget(m_button);
+
+      // TODO: connect custom function switches to model data?
+
+      connect(m_button, &QPushButton::pressed, this, &RadioFuncSwitchWidget::onPressed);
+      connect(m_button, &QPushButton::released, this, &RadioFuncSwitchWidget::onReleased);
+      connect(this, &RadioWidget::valueChanged, m_button, [=](int value) {
+        m_value = value;
+      });
+      connect(simulator, &SimulatorInterface::fsColorChange, this, &RadioFuncSwitchWidget::onFsColorChange);
+    }
+
+    void onPressed()
+    {
+      setValue(1);
+    }
+
+    void onReleased()
+    {
+      setValue(-1);
+    }
+
+  private slots:
+    void onFsColorChange(quint8 index, qint32 color)
+    {
+      if (index == m_index && color != lastColor) {
+        lastColor = color;
+        QColor c = QColor((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);
+        QString qss = QString("border-style: outset; border-width: 2px; border-radius: 5px; border-color: darkgrey; padding: 2px; background-color: %1;").arg(c.name());
+        m_button->setStyleSheet(qss);
+      }
+    }
+
+  private:
+    QPushButton * m_button;
+    qint32 lastColor = -1;
+};

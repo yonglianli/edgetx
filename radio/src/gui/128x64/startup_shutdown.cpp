@@ -19,17 +19,19 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
+#include "hal/rgbleds.h"
+#include "boards/generic_stm32/rgb_leds.h"
 
 
-#define SLEEP_BITMAP_WIDTH             60
-#define SLEEP_BITMAP_HEIGHT            60
+#define SLEEP_BITMAP_WIDTH             42
+#define SLEEP_BITMAP_HEIGHT            47
 
 const unsigned char bmp_sleep[]  = {
 #include "sleep.lbm"
 };
 
-#if defined(RADIO_T20)
+#if defined(RADIO_FAMILY_T20)
 constexpr uint8_t steps = NUM_FUNCTIONS_SWITCHES/2;
 #elif defined(FUNCTION_SWITCHES)
 constexpr uint8_t steps = NUM_FUNCTIONS_SWITCHES;
@@ -52,9 +54,14 @@ void drawStartupAnimation(uint32_t duration, uint32_t totalDuration)
 
   for (uint8_t j = 0; j < steps; j++) {
     if (index2 > j) {
-      fsLedOn(j);
-#if defined(RADIO_T20)
-      fsLedOn(j + steps);
+#if defined(FUNCTION_SWITCHES_RGB_LEDS)
+      fsLedRGB(j, 0xFFFFFF);
+      rgbLedColorApply();
+#else
+      setFSLedON(j);
+#endif
+#if defined(RADIO_FAMILY_T20)
+      setFSLedON(j + steps);
 #endif
     }
   }
@@ -88,14 +95,14 @@ void drawShutdownAnimation(uint32_t duration, uint32_t totalDuration,
       steps);
 
   for (uint8_t j = 0; j < steps; j++) {
-    fsLedOff(j);
-#if defined(RADIO_T20)
-    fsLedOff(j + steps);
+    setFSLedOFF(j);
+#if defined(RADIO_FAMILY_T20)
+    setFSLedOFF(j + steps);
 #endif
     if (steps - index2 > j) {
-      fsLedOn(j);
-#if defined(RADIO_T20)
-      fsLedOn(j + steps);
+      setFSLedON(j);
+#if defined(RADIO_FAMILY_T20)
+      setFSLedON(j + steps);
 #endif
     }
   }

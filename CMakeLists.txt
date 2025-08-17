@@ -2,10 +2,11 @@
 cmake_minimum_required(VERSION 3.13)
 project(EdgeTX)
 
-set(VERSION_MAJOR "2")
-set(VERSION_MINOR "10")
+set(VERSION_MAJOR "3")
+set(VERSION_MINOR "0")
 set(VERSION_REVISION "0")
 set(CODENAME "dev")
+string(TIMESTAMP BUILD_YEAR "%Y")
 
 if(MINGW OR WIN32)
   set(CMAKE_OBJECT_PATH_MAX 200)
@@ -72,55 +73,55 @@ if(EdgeTX_SUPERBUILD)
       -DNATIVE_BUILD:BOOL=0
     INSTALL_COMMAND  ""
     EXCLUDE_FROM_ALL TRUE
-    )
+  )
 
   add_custom_target(configure
     DEPENDS native-configure arm-none-eabi-configure)
 
   add_custom_target(libsimulator
-    COMMAND $(MAKE) -C native libsimulator
+    COMMAND ${CMAKE_COMMAND} --build native --target libsimulator --parallel
     DEPENDS native-configure
-    )
+  )
 
   add_custom_target(simulator
-    COMMAND $(MAKE) -C native simulator
+    COMMAND ${CMAKE_COMMAND} --build native --target simulator --parallel
     DEPENDS native-configure
-    )
+  )
 
   add_custom_target(simu
-    COMMAND $(MAKE) -C native simu
+    COMMAND ${CMAKE_COMMAND} --build native --target simu --parallel
     DEPENDS native-configure
-    )
+  )
 
   add_custom_target(companion
-    COMMAND $(MAKE) -C native companion
+    COMMAND ${CMAKE_COMMAND} --build native --target companion --parallel
     DEPENDS native-configure
-    )
+  )
 
   add_custom_target(gtests-radio
-    COMMAND $(MAKE) -C native gtests-radio
+    COMMAND ${CMAKE_COMMAND} --build native --target gtests-radio --parallel
     DEPENDS native-configure
-    )
+  )
 
   add_custom_target(tests-radio
-    COMMAND $(MAKE) -C native tests-radio
+    COMMAND ${CMAKE_COMMAND} --build native --target tests-radio --parallel
     DEPENDS native-configure
-    )
+  )
 
   add_custom_target(bootloader
-    COMMAND $(MAKE) -C arm-none-eabi bootloader
+    COMMAND ${CMAKE_COMMAND} --build arm-none-eabi --target bootloader --parallel
     DEPENDS arm-none-eabi-configure
-    )
+  )
 
   add_custom_target(firmware
-    COMMAND $(MAKE) -C arm-none-eabi firmware
+    COMMAND ${CMAKE_COMMAND} --build arm-none-eabi --target firmware --parallel
     DEPENDS arm-none-eabi-configure
-    )
+  )
 
   add_custom_target(firmware-size
-    COMMAND $(MAKE) -C arm-none-eabi firmware-size
+    COMMAND ${CMAKE_COMMAND} --build arm-none-eabi --target firmware-size --parallel
     DEPENDS arm-none-eabi-configure
-    )
+  )
 
   # Quit cmake at this point
   return()
@@ -141,7 +142,7 @@ if(NATIVE_BUILD)
   include(NativeTargets)
 else()
   # Prevent CMake warnings
-  set(IGNORE "${SDL2_LIBRARY_PATH}" "${LIBSSL1_ROOT_DIR}" "${OPENSSL_ROOT_DIR}")
+  set(IGNORE "${LIBUSB1_ROOT_DIR}" "${OPENSSL_ROOT_DIR}")
 endif()
 
 add_subdirectory(${RADIO_SRC_DIR})

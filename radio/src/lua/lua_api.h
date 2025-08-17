@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _LUA_API_H_
-#define _LUA_API_H_
+#pragma once
 
 #if defined(LUA)
 
@@ -28,14 +27,11 @@
 #include "rtos.h"
 
 extern "C" {
-  #include <lua.h>
-  #include <lauxlib.h>
-  #include <lualib.h>
-  #include <lgc.h>
-}
+  #include "lua.h"
+};
 
 #include "dataconstants.h"
-#include "opentx_types.h"
+#include "edgetx_types.h"
 
 #ifndef LUA_SCRIPT_LOAD_MODE
   // Can force loading of binary (.luac) or plain-text (.lua) versions of scripts specifically, and control
@@ -56,43 +52,25 @@ void luaReceiveData(uint8_t* buf, uint32_t len);
 void luaSetSendCb(void* ctx, void (*cb)(void*, uint8_t));
 void luaSetGetSerialByte(void* ctx, int (*fct)(void*, uint8_t*));
 
-extern lua_State * lsScripts;
 
 extern bool luaLcdAllowed;
 
 #if defined(COLORLCD)
-//
-// Obsoleted definitions:
-//  -> please check against libopenui_defines.h for conflicts
-//  -> here we use the 4 most significant bits for our flags (32 bit unsigned)
-//
-// INVERS & BLINK are used in most scripts, let's offer a compatibility mode.
-//
-#undef INVERS
-#undef BLINK
-
-#define INVERS     0x01u
-#define BLINK    0x1000u
-
 extern bool luaLcdAllowed;
 
 class BitmapBuffer;
 extern BitmapBuffer* luaLcdBuffer;
 
-class Widget;
-extern Widget* runningFS;
-
-LcdFlags flagsRGB(LcdFlags flags);
-
-extern lua_State* lsWidgets;
 extern uint32_t luaExtraMemoryUsage;
 void luaInitThemesAndWidgets();
 #endif
 
+void luaInitMainState();
 void luaInit();
+void luaClose();
+
 void luaEmptyEventBuffer();
 
-#define LUA_INIT_THEMES_AND_WIDGETS()  luaInitThemesAndWidgets()
 #define lua_registernumber(L, n, i)    (lua_pushnumber(L, (i)), lua_setglobal(L, (n)))
 #define lua_registerint(L, n, i)       (lua_pushinteger(L, (i)), lua_setglobal(L, (n)))
 #define lua_pushtableboolean(L, k, v)  (lua_pushstring(L, (k)), lua_pushboolean(L, (v)), lua_settable(L, -3))
@@ -114,6 +92,8 @@ void luaEmptyEventBuffer();
 
 #define lua_registerlib(L, name, tab)  (luaL_newmetatable(L, name), luaL_setfuncs(L, tab, 0), lua_setglobal(L, name))
 
+// Must match first two entries in ZoneOpton::Type enum
+// TODO: should be cleaned up
 enum luaScriptInputType {
   INPUT_TYPE_FIRST = 0,
   INPUT_TYPE_VALUE = INPUT_TYPE_FIRST,
@@ -142,11 +122,14 @@ enum ScriptState {
 };
 
 enum ScriptReference {
+  SCRIPT_REF_FIRST,
 #if defined(LUA_MODEL_SCRIPTS)
-  SCRIPT_MIX_FIRST,
+  SCRIPT_MIX_FIRST = SCRIPT_REF_FIRST,
   SCRIPT_MIX_LAST=SCRIPT_MIX_FIRST+MAX_SCRIPTS-1,
-#endif
   SCRIPT_FUNC_FIRST,
+#else
+  SCRIPT_FUNC_FIRST = SCRIPT_REF_FIRST,
+#endif
   SCRIPT_FUNC_LAST=SCRIPT_FUNC_FIRST+MAX_SPECIAL_FUNCTIONS-1,    // model functions
   SCRIPT_GFUNC_FIRST,
   SCRIPT_GFUNC_LAST=SCRIPT_GFUNC_FIRST+MAX_SPECIAL_FUNCTIONS-1,  // global functions
@@ -154,7 +137,10 @@ enum ScriptReference {
   SCRIPT_TELEMETRY_FIRST,
   SCRIPT_TELEMETRY_LAST=SCRIPT_TELEMETRY_FIRST+MAX_SCRIPTS,      // telem0 and telem1 .. telem7
 #endif
-  SCRIPT_STANDALONE                                              // Standalone script
+  SCRIPT_REF_LAST,
+#if !defined(COLORLCD)
+  SCRIPT_STANDALONE = SCRIPT_REF_LAST                            // Standalone script
+#endif
 };
 
 struct ScriptInternalData {
@@ -163,6 +149,9 @@ struct ScriptInternalData {
   int run;
   int background;
   uint8_t instructions;
+#if defined(COLORLCD)  
+  bool useLvgl;
+#endif
 };
 
 struct ScriptInputsOutputs {
@@ -178,6 +167,9 @@ enum InterpreterState {
   INTERPRETER_LOADING,
   INTERPRETER_START_RUNNING,
   INTERPRETER_RUNNING,
+#if defined(COLORLCD)
+  INTERPRETER_PAUSED,
+#endif
   INTERPRETER_PANIC = 255
 };
 
@@ -188,13 +180,9 @@ extern bool    luaLcdAllowed;
 extern ScriptInternalData scriptInternalData[MAX_SCRIPTS];
 extern ScriptInputsOutputs scriptInputsOutputs[MAX_SCRIPTS];
 
-void luaClose(lua_State ** L);
 bool luaTask(bool allowLcdUsage);
 void checkLuaMemoryUsage();
 void luaExec(const char * filename);
-void luaDoGc(lua_State * L, bool full);
-uint32_t luaGetMemUsed(lua_State * L);
-void luaGetValueAndPush(lua_State * L, int src);
 bool isTelemetryScriptAvailable();
 
 #define luaGetCpuUsed(idx) scriptInternalData[idx].instructions
@@ -221,6 +209,7 @@ extern struct our_longjmp * global_lj;
 extern uint16_t maxLuaInterval;
 extern uint16_t maxLuaDuration;
 extern uint8_t instructionsPercent;
+#define LUA_TASK_PERIOD_TICKS                5   // 50 ms
 
 struct LuaField {
   uint16_t id;
@@ -231,12 +220,6 @@ struct LuaField {
 bool luaFindFieldByName(const char * name, LuaField & field, unsigned int flags=0);
 bool luaFindFieldById(int id, LuaField & field, unsigned int flags=0);
 void luaLoadThemes();
-void luaRegisterLibraries(lua_State * L);
-void registerBitmapClass(lua_State * L);
-void luaSetInstructionsLimit(lua_State* L, int count);
-int luaLoadScriptFileToState(lua_State * L, const char * filename, const char * mode);
-void luaPushDateTime(lua_State * L, uint32_t year, uint32_t mon, uint32_t day,
-                            uint32_t hour, uint32_t min, uint32_t sec);
 
 // Unregister LUA widget factories
 void luaUnregisterWidgets();
@@ -259,13 +242,12 @@ struct LuaMemTracer {
 
 void * tracer_alloc(void * ud, void * ptr, size_t osize, size_t nsize);
 
+void l_pushtableint(lua_State* ls, const char * key, int value);
+void l_pushtablebool(lua_State* ls, const char * key, bool value);
 
 #else  // defined(LUA)
 
 #define luaInit()
-#define LUA_INIT_THEMES_AND_WIDGETS()
 #define LUA_LOAD_MODEL_SCRIPTS()
 
 #endif // defined(LUA)
-
-#endif // _LUA_API_H_

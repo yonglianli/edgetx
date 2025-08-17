@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -25,7 +26,7 @@
 #include <math.h>
 #include <gtest/gtest.h>
 
-class OpenTxTest : public testing::Test 
+class EdgeTxTest : public testing::Test 
 {
   protected:  // You should make the members protected s.t. they can be
               // accessed from sub-classes.

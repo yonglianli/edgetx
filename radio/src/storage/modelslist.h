@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MODELSLIST_H_
-#define _MODELSLIST_H_
+#pragma once
 
 #include <stdint.h>
 
@@ -35,10 +34,6 @@
 
 #include "sdcard.h"
 
-#if !defined(SDCARD_YAML)
-#include "sdcard_raw.h"
-#endif
-
 #include "dataconstants.h"
 #include "rtc.h"
 
@@ -47,12 +42,6 @@
   (LEN_MODEL_FILENAME + sizeof(" F,FF F,3F,FF\r\n") - 1)
 
 #define DEFAULT_MODEL_SORT NAME_ASC
-
-#if LCD_W > LCD_H // Landscape
-#define LABEL_TRUNCATE_LENGTH 21
-#else
-#define LABEL_TRUNCATE_LENGTH 16
-#endif
 
 struct ModelData;
 struct ModuleData;
@@ -157,6 +146,7 @@ class ModelMap : protected std::multimap<uint16_t, ModelCell *>
   {
     this->filtlbls = std::move(filtlbls);
   }
+  void clearFilter() { filtlbls.clear(); }
   void addFilteredLabel(const std::string &lbl);
   bool isLabelFiltered(const std::string &lbl);
   std::set<uint32_t> filteredLabels() { return filtlbls; }
@@ -221,21 +211,10 @@ class ModelsList : public ModelsVector
   void init();
 
  public:
-  enum class Format {
-    txt,
-#if defined(SDCARD_YAML)
-    yaml,
-    yaml_txt,
-    load_default = yaml,
-#else
-    load_default = txt,
-#endif
-  };
-
   ModelsList();
   ~ModelsList();
 
-  bool load(Format fmt = Format::load_default);
+  bool load();
   const char *save(LabelsVector newOrder=LabelsVector());
   void clear();
 
@@ -248,8 +227,6 @@ class ModelsList : public ModelsVector
   {
     return std::vector<ModelCell *>::size();
   }
-
-  bool readNextLine(char *line, int maxlen);
 
   ModelCell *addModel(const char *name, bool save = true, ModelCell *copyCell = nullptr);
   bool removeModel(ModelCell *model);
@@ -269,16 +246,11 @@ class ModelsList : public ModelsVector
  protected:
   FIL file;
 
-  bool loadTxt();
-#if defined(SDCARD_YAML)
   bool loadYaml();
   bool loadYamlDirScanner();
-#endif
 };
 
 ModelLabelsVector getUniqueLabels();
 
 extern ModelsList modelslist;
 extern ModelMap modelslabels;
-
-#endif  // _MODELSLIST_H_

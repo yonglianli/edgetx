@@ -19,11 +19,34 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "calibration.h"
-#include "gui.h"
+#include "analogs.h"
 
 #include "hal/adc_driver.h"
+
+void menuCommonCalibOptions(event_t event)
+{
+  SIMPLE_SUBMENU(STR_AXISDIR, HEADER_LINE+4);
+  uint8_t sub = menuVerticalPosition;
+
+  coord_t y = MENU_HEADER_HEIGHT + 1;
+  lcdDrawTextAlignedLeft(y, STR_STICKS);
+  lcdDrawText(LCD_W / 3 * 2, y, STR_MENU_INVERT, CENTERED);
+  y+=FH;
+  for(uint8_t i = 0; i < 4; i++) {
+    uint8_t k = i + menuVerticalOffset;
+    LcdFlags attr = (sub == k) ? INVERS : 0;
+
+    lcdDrawTextIndented(y, STR_CHAR_STICK);
+    lcdDrawText(lcdNextPos, y, analogGetCanonicalName(ADC_INPUT_MAIN, i), 0);
+    bool stickInversion = getStickInversion(i);
+    lcdDrawChar(LCD_W / 3 * 2, y, stickInversion ? 127 : 126, attr);
+    if (attr) stickInversion = checkIncDec(event, stickInversion, 0, 1, EE_GENERAL);
+    setStickInversion(i, stickInversion);
+    y+=FH;
+  }
+}
 
 void menuCommonCalib(event_t event)
 {
@@ -36,6 +59,11 @@ void menuCommonCalib(event_t event)
       reusableBuffer.calib.state = CALIB_START;
       break;
 
+    case EVT_KEY_LONG(KEY_ENTER):
+      killEvents(event);
+      pushMenu(menuCommonCalibOptions);
+      break;
+
     case EVT_KEY_BREAK(KEY_ENTER):
       reusableBuffer.calib.state++;
       break;
@@ -44,22 +72,21 @@ void menuCommonCalib(event_t event)
   switch (reusableBuffer.calib.state) {
     case CALIB_START:
       // START CALIBRATION
-      if (!READ_ONLY()) {
-        lcdDrawTextAlignedLeft(MENU_HEADER_HEIGHT+2*FH, STR_MENUTOSTART);
-      }
+      lcdDrawText(LCD_W/2, MENU_HEADER_HEIGHT+2*FH, STR_MENUTOSTART, CENTERED);
       break;
 
     case CALIB_SET_MIDPOINT:
       // SET MIDPOINT
-      lcdDrawText(0*FW, MENU_HEADER_HEIGHT+FH, STR_SETMIDPOINT, INVERS);
-      lcdDrawTextAlignedLeft(MENU_HEADER_HEIGHT+2*FH, STR_MENUWHENDONE);
+      lcdDrawText(LCD_W/2, MENU_HEADER_HEIGHT+FH, STR_SETMIDPOINT, INVERS|CENTERED);
+      lcdDrawText(LCD_W/2, MENU_HEADER_HEIGHT+2*FH, STR_MENUWHENDONE, CENTERED);
       adcCalibSetMidPoint();
       break;
 
     case CALIB_MOVE_STICKS:
       // MOVE STICKS/POTS
-      lcdDrawText(0*FW, MENU_HEADER_HEIGHT+FH, STR_MOVESTICKSPOTS, INVERS);
-      lcdDrawTextAlignedLeft(MENU_HEADER_HEIGHT+2*FH, STR_MENUWHENDONE);
+      lcdDrawText(LCD_W/2, MENU_HEADER_HEIGHT, STR_MOVESTICKSPOTS, INVERS|CENTERED);
+      lcdDrawText(LCD_W/2, MENU_HEADER_HEIGHT+FH, STR_MENUAXISDIR, CENTERED);
+      lcdDrawText(LCD_W/2, MENU_HEADER_HEIGHT+2*FH, STR_MENUWHENDONE, CENTERED);
       adcCalibSetMinMax();
       break;
 

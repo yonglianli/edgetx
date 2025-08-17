@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -24,7 +25,8 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QSplashScreen>
-#if defined(JOYSTICKS) || defined(SIMU_AUDIO)
+
+#if defined(USE_SDL)
   #include <SDL.h>
   #undef main
 #endif
@@ -39,6 +41,7 @@
 #include "storage.h"
 #include "translations.h"
 #include "helpers.h"
+#include "boardfactories.h"
 
 #ifdef __APPLE__
 #include <QProxyStyle>
@@ -57,7 +60,7 @@ class MyProxyStyle : public QProxyStyle
 
 void importError()
 {
-  QMessageBox::critical(nullptr, CPN_STR_APP_NAME, QCoreApplication::translate("Companion", "The saved settings could not be imported, please try again or continue with current settings."), QMessageBox::Ok, 0);
+  QMessageBox::critical(nullptr, CPN_STR_APP_NAME, QCoreApplication::translate("Companion", "The saved settings could not be imported, please try again or continue with current settings."), QMessageBox::Ok, QMessageBox::NoButton);
 }
 
 void checkSettingsImport(bool force = false)
@@ -70,19 +73,23 @@ void checkSettingsImport(bool force = false)
   if (!found && !force)
     return;
 
-  QString msg;
   if (previousVersion.isEmpty()) {
     const QString impFileBtn = QCoreApplication::translate("Companion", "Import from File");
     const QString impNoneBtn = QCoreApplication::translate("Companion", "Do not import");
+
+    QString msg;
 
     if (found)
       msg = QCoreApplication::translate("Companion", "We have found possible Companion settings backup file(s).\nDo you want to import settings from a file?");
     else
       msg = QCoreApplication::translate("Companion", "Import settings from a file, or start with current values.");
 
-    const int ret = QMessageBox::question(nullptr, CPN_STR_APP_NAME, msg, impNoneBtn, impFileBtn, 0, 0);
+    QMessageBox msgBox(QMessageBox::Question, CPN_STR_APP_NAME, msg);
+    msgBox.addButton(impFileBtn, QMessageBox::AcceptRole);
+    QPushButton *btnCancel = msgBox.addButton(impNoneBtn, QMessageBox::RejectRole);
+    msgBox.exec();
 
-    if (!ret)
+    if (msgBox.clickedButton() == btnCancel)
       return;
   }
   else {
@@ -129,11 +136,6 @@ void printHelpText()
 
 int main(int argc, char *argv[])
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 6, 0))
-  /* From doc: This attribute must be set before Q(Gui)Application is constructed. */
-  QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-#endif
-
   QApplication app(argc, argv);
   app.setApplicationName(APP_COMPANION);
   app.setOrganizationName(COMPANY);
@@ -215,22 +217,17 @@ int main(int argc, char *argv[])
 
   Translations::installTranslators();
 
-#if defined(JOYSTICKS) || defined(SIMU_AUDIO)
-  uint32_t sdlFlags = 0;
-  #ifdef JOYSTICKS
-    sdlFlags |= SDL_INIT_JOYSTICK;
-  #endif
-  #ifdef SIMU_AUDIO
-    sdlFlags |= SDL_INIT_AUDIO;
-  #endif
+#if defined(USE_SDL)
   #if defined(_WIN32) || defined(_WIN64)
     putenv("SDL_AUDIODRIVER=directsound");
   #endif
-  if (SDL_Init(sdlFlags) < 0) {
+  if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_AUDIO) < 0) {
     fprintf(stderr, "ERROR: couldn't initialize SDL: %s\n", SDL_GetError());
   }
 #endif
 
+  Q_INIT_RESOURCE(hwdefs);
+  gBoardFactories = new BoardFactories();
   registerStorageFactories();
   registerOpenTxFirmwares();
   SimulatorLoader::registerSimulators();
@@ -264,8 +261,9 @@ int main(int argc, char *argv[])
   SimulatorLoader::unregisterSimulators();
   unregisterOpenTxFirmwares();
   unregisterStorageFactories();
+  gBoardFactories->unregisterBoardFactories();
 
-#if defined(JOYSTICKS) || defined(SIMU_AUDIO)
+#if defined(USE_SDL)
   SDL_Quit();
 #endif
 

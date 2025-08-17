@@ -19,13 +19,16 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _USB_DESCRIPTOR_H_
-#define _USB_DESCRIPTOR_H_
+#pragma once
 
 #if defined(PCBX12S)
   #define USB_NAME                     "FrSky Horus"
   #define USB_MANUFACTURER             'F', 'r', 'S', 'k', 'y', ' ', ' ', ' '  /* 8 bytes */
   #define USB_PRODUCT                  'H', 'o', 'r', 'u', 's', ' ', ' ', ' '  /* 8 Bytes */
+#elif defined(RADIO_T15)
+  #define USB_NAME                     "Jumper T15"
+  #define USB_MANUFACTURER             'J', 'u', 'm', 'p', 'e', 'r', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                  'T', '1', '5', ' ', ' ', ' ', ' ', ' '  /* 8 Bytes */
 #elif defined(RADIO_T16)
   #define USB_NAME                     "Jumper T16"
   #define USB_MANUFACTURER             'J', 'u', 'm', 'p', 'e', 'r', ' ', ' '  /* 8 bytes */
@@ -38,10 +41,16 @@
   #define USB_NAME                     "Radiomaster TX16S"
   #define USB_MANUFACTURER             'R', 'M', '_', 'T', 'X', ' ', ' ', ' '  /* 8 bytes */
   #define USB_PRODUCT                  'R', 'M', ' ', 'T', 'X', '1', '6', 'S'  /* 8 Bytes */
+#elif defined(RADIO_F16)
+  #define USB_NAME                     "Fatfish F16"
+  #define USB_MANUFACTURER             'F', 'A', 'T', 'F', 'I', 'S', 'H', ' '  /* 8 bytes */
+  #define USB_PRODUCT                  'F', 'F', ' ', 'F', '1', '6', ' ', ' '  /* 8 Bytes */
 #elif defined(PCBX10)
   #define USB_NAME                     "FrSky X10"
   #define USB_MANUFACTURER             'F', 'r', 'S', 'k', 'y', ' ', ' ', ' '  /* 8 bytes */
   #define USB_PRODUCT                  'X', '1', '0', ' ', ' ', ' ', ' ', ' '  /* 8 Bytes */
+#elif defined(RADIO_V16)
+  #define USB_NAME                     "HelloRadioSky V16"
+  #define USB_MANUFACTURER             'H', 'R', 'S', 'k', 'y', ' ', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                  'V', '1', '6', ' ', ' ', ' ', ' ', ' '  /* 8 Bytes */
 #endif
-
-#endif // _USB_DESCRIPTOR_H_

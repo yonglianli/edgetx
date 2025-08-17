@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -46,10 +47,8 @@ class AbstractStaticItemModel;
 constexpr char AIM_MODELDATA_TRAINERMODE[]  {"modeldata.trainermode"};
 constexpr char AIM_MODELDATA_FUNCSWITCHCONFIG[]  {"modeldata.funcswitchconfig"};
 constexpr char AIM_MODELDATA_FUNCSWITCHSTART[]  {"modeldata.funcswitchstart"};
-constexpr int LABEL_LENGTH=16;
-
-#define CHAR_FOR_NAMES " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-."
-#define CHAR_FOR_NAMES_REGEX "[ A-Za-z0-9_.-,\"]*"
+constexpr char AIM_MODELDATA_FUNCSWITCHGROUPSTARTSWITCH[] = {"modeldata.funcswitchgroupstartswitch"};
+constexpr char AIM_MODELDATA_FUNCSWITCHGROUPS[] = {"modeldata.funcswitchgroups"};
 
 class RSSIAlarmData {
   public:
@@ -84,9 +83,11 @@ enum TrainerMode {
   TRAINER_MODE_MASTER_BLUETOOTH,
   TRAINER_MODE_SLAVE_BLUETOOTH,
   TRAINER_MODE_MULTI,
-  TRAINER_MODE_LAST = TRAINER_MODE_MULTI
+  TRAINER_MODE_CRSF,
+  TRAINER_MODE_LAST = TRAINER_MODE_CRSF
 };
 
+#define MODEL_NAME_LEN 15
 #define INPUT_NAME_LEN 4
 #define CPN_MAX_BITMAP_LEN 14
 
@@ -101,6 +102,21 @@ class USBJoystickChData {
     unsigned int btn_num;
     unsigned int switch_npos;
     void clear() { memset(reinterpret_cast<void *>(this), 0, sizeof(USBJoystickChData)); }
+};
+
+class customSwitch {
+  public:
+    customSwitch() { clear(); }
+    Board::SwitchType type;
+    unsigned int group;
+    unsigned int start;
+    unsigned int state;
+    char name[HARDWARE_NAME_LEN + 1];
+    unsigned int onColorLuaOverride;
+    unsigned int offColorLuaOverride;
+    RGBLedColor onColor;
+    RGBLedColor offColor;
+    void clear() { memset(reinterpret_cast<void *>(this), 0, sizeof(customSwitch)); }
 };
 
 class ModelData {
@@ -125,11 +141,12 @@ class ModelData {
 
     char      semver[8 + 1];
     bool      used;
-    char      name[15+1];
+    char      name[MODEL_NAME_LEN + 1];
     char      filename[16+1];
     char      labels[100];
     int       modelIndex;      // Companion only, temporary index position managed by data model.
     bool      modelUpdated;    // Companion only, used to highlight if changed in models list
+    bool      modelErrors;     // Companion only, used to highlight if data errors in models list
 
     TimerData timers[CPN_MAX_TIMERS];
     bool      noGlobalFunctions;
@@ -160,11 +177,10 @@ class ModelData {
     SwashRingData swashRingData;
     unsigned int thrTraceSrc;
     uint64_t switchWarningStates;
-    unsigned int switchWarningEnable;
     unsigned int thrTrimSwitch;
     unsigned int potsWarningMode;
-    bool potsWarnEnabled[CPN_MAX_POTS + CPN_MAX_SLIDERS];
-    int potsWarnPosition[CPN_MAX_POTS + CPN_MAX_SLIDERS];
+    bool potsWarnEnabled[CPN_MAX_INPUTS];
+    int potsWarnPosition[CPN_MAX_INPUTS];
     bool displayChecklist;
 
     GVarData gvarData[CPN_MAX_GVARS];
@@ -189,6 +205,7 @@ class ModelData {
 
     RadioLayout::CustomScreens customScreens;
     TopBarPersistentData topBarData;
+    uint8_t topbarWidgetWidth[MAX_TOPBAR_ZONES];
     unsigned int view;
 
     char registrationId[8+1];
@@ -208,29 +225,17 @@ class ModelData {
     unsigned int modelCustomScriptsDisabled;
     unsigned int modelTelemetryDisabled;
 
-    enum FunctionSwitchConfig {
-      FUNC_SWITCH_CONFIG_NONE,
-      FUNC_SWITCH_CONFIG_FIRST = FUNC_SWITCH_CONFIG_NONE,
-      FUNC_SWITCH_CONFIG_TOGGLE,
-      FUNC_SWITCH_CONFIG_2POS,
-      FUNC_SWITCH_CONFIG_LAST = FUNC_SWITCH_CONFIG_2POS
-    };
-
     enum FunctionSwitchStart {
-      FUNC_SWITCH_START_ACTIVE,
-      FUNC_SWITCH_START_FIRST = FUNC_SWITCH_START_ACTIVE,
-      FUNC_SWITCH_START_INACTIVE,
-      //FUNC_SWITCH_START_FIRST = FUNC_SWITCH_START_INACTIVE,
+      FUNC_SWITCH_START_OFF,
+      FUNC_SWITCH_START_FIRST = FUNC_SWITCH_START_OFF,
+      FUNC_SWITCH_START_ON,
       FUNC_SWITCH_START_PREVIOUS,
       FUNC_SWITCH_START_LAST = FUNC_SWITCH_START_PREVIOUS
     };
 
     // Function switches
-    unsigned int functionSwitchConfig;
-    unsigned int functionSwitchGroup;
-    unsigned int functionSwitchStartConfig;
-    unsigned int functionSwitchLogicalState;
-    char functionSwitchNames[CPN_MAX_FUNCTION_SWITCHES][HARDWARE_NAME_LEN + 1];
+    customSwitch customSwitches[CPN_MAX_SWITCHES_FUNCTION];
+    unsigned int cfsGroupOn[4];
 
     // Custom USB joytsick mapping
     unsigned int usbJoystickExtMode;
@@ -269,13 +274,16 @@ class ModelData {
     void clearMixes();
     void sortMixes();
     void clearInputs();
+    void sortInputs();
 
     int getChannelsMax(bool forceExtendedLimits=false) const;
 
     bool isAvailable(const RawSwitch & swtch) const;
-    bool isFunctionSwitchPositionAvailable(int index) const;
+    bool isFunctionSwitchPositionAvailable(int swIndex, int swPos, const GeneralSettings * const gs) const;
     bool isFunctionSwitchSourceAllowed(int index) const;
 
+    const Board::SwitchType getSwitchType(int sw, const GeneralSettings & gs) const;
+  
     enum ReferenceUpdateAction {
       REF_UPD_ACT_CLEAR,
       REF_UPD_ACT_SHIFT,
@@ -314,7 +322,7 @@ class ModelData {
     bool hasExpoSiblings(const int index);
     void removeMix(const int idx);
     QString thrTraceSrcToString() const;
-    QString thrTraceSrcToString(const int index) const;
+    QString thrTraceSrcToString(const GeneralSettings * generalSettings, const int index) const;
     int thrTraceSrcCount() const;
     bool isThrTraceSrcAvailable(const GeneralSettings * generalSettings, const int index) const;
 
@@ -330,28 +338,42 @@ class ModelData {
     static QString trainerModeToString(const int value);
     bool isTrainerModeAvailable(const GeneralSettings & generalSettings, const Firmware * firmware, const int value);
     AbstractStaticItemModel * trainerModeItemModel(const GeneralSettings & generalSettings, const Firmware * firmware);
-    unsigned int getFuncSwitchConfig(unsigned int index) const;
-    void setFuncSwitchConfig(unsigned int index, unsigned int value);
+    Board::SwitchType getFuncSwitchConfig(unsigned int index) const;
+    void setFuncSwitchConfig(unsigned int index, Board::SwitchType value);
     static QString funcSwitchConfigToString(unsigned int value);
     static AbstractStaticItemModel * funcSwitchConfigItemModel();
+    static AbstractStaticItemModel * funcSwitchGroupStartSwitchModel(int switchcnt);
+    static AbstractStaticItemModel * funcSwitchGroupsModel();
 
     unsigned int getFuncSwitchGroup(unsigned int index) const;
     void setFuncSwitchGroup(unsigned int index, unsigned int value);
 
-    unsigned int getFuncSwitchAlwaysOnGroup(unsigned int index) const;
-    void setFuncSwitchAlwaysOnGroup(unsigned int index, unsigned int value);
+    unsigned int getFuncSwitchAlwaysOnGroup(unsigned int group) const;
+    unsigned int getFuncSwitchAlwaysOnGroupForSwitch(unsigned int index) const;
+    void setFuncSwitchAlwaysOnGroup(unsigned int group, unsigned int value);
+    void setGroupSwitchState(uint8_t group, int switchcnt);
 
     unsigned int getFuncSwitchStart(unsigned int index) const;
     void setFuncSwitchStart(unsigned int index, unsigned int value);
+    int getFuncGroupSwitchCount(unsigned int group, int switchcnt) const;
+    unsigned int getFuncGroupSwitchStart(unsigned int group, int switchcnt) const;
+    void setFuncGroupSwitchStart(unsigned int group, unsigned int value, int switchcnt);
     static QString funcSwitchStartToString(unsigned int value);
     static AbstractStaticItemModel * funcSwitchStartItemModel();
 
     int getCustomScreensCount() const;
+    bool hasErrors() { return modelErrors; }
+    bool isValid() { return !hasErrors(); }
+    void validate();
+    QStringList errorsList();
 
   protected:
     void removeGlobalVar(int & var);
 
   private:
+    int getMixLine(int index) const;
+    int getInputLine(int index) const;
+
     QVector<UpdateReferenceParams> *updRefList = nullptr;
 
     struct UpdateReferenceInfo
@@ -384,13 +406,13 @@ class ModelData {
     void updateTelemetryRef(int & idx);
     void updateTelemetryRef(unsigned int & idx);
     void updateModuleFailsafes(ModuleData * md);
-    inline void updateSourceRef(RawSource & src) { updateTypeIndexRef<RawSource, RawSourceType>(src, updRefInfo.srcType); }
+    inline void updateSourceRef(RawSource & src) { updateTypeIndexRef<RawSource, RawSourceType>(src, updRefInfo.srcType, 1); }
     inline void updateSwitchRef(RawSwitch & swtch) { updateTypeIndexRef<RawSwitch, RawSwitchType>(swtch, updRefInfo.swtchType, 1); }
     inline void updateTimerMode(RawSwitch & swtch) { updateTypeIndexRef<RawSwitch, RawSwitchType>(swtch, updRefInfo.swtchType, 1, false, (int)SWITCH_TYPE_TIMER_MODE, 0); }
     inline void updateSourceIntRef(int & value)
     {
       RawSource src = RawSource(value);
-      updateTypeIndexRef<RawSource, RawSourceType>(src, updRefInfo.srcType);
+      updateTypeIndexRef<RawSource, RawSourceType>(src, updRefInfo.srcType, 1);
       if (value != src.toValue())
         value = src.toValue();
     }

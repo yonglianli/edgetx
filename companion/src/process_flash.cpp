@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -96,6 +97,7 @@ void FlashProcess::onStarted()
 #if !__GNUC__
 bool killProcessByName(const char *szProcessToKill)
 {
+  QString processToKill{szProcessToKill};
   HANDLE hProcessSnap;
   HANDLE hProcess;
   PROCESSENTRY32 pe32;
@@ -114,7 +116,9 @@ bool killProcessByName(const char *szProcessToKill)
   }
 
   do {
-    if (!strcmp(pe32.szExeFile,szProcessToKill)) {    //  checks if process at current position has the name of to be killed app
+    QString exeFile{pe32.szExeFile};
+  
+    if (exeFile == processToKill) {    //  checks if process at current position has the name of to be killed app
       hProcess = OpenProcess(PROCESS_TERMINATE,0, pe32.th32ProcessID);  // gets handle to process
       TerminateProcess(hProcess, 0);   // Terminate process by handle
       CloseHandle(hProcess);  // close the handle

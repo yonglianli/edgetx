@@ -3,8 +3,9 @@ name: Build and deploy nightly release
 on:
   schedule:
     - cron: '0 2 * * *' # run at 2 AM UTC
+  workflow_dispatch:
 
-concurrency: 
+concurrency:
   group: 'nightly'
   cancel-in-progress: true
 
@@ -16,29 +17,31 @@ jobs:
       matrix:
         target:
           - nv14;el18
-          - pl18;pl18ev
-          - t12
-          - t16
-          - t18
-          - t8;zorro;pocket;mt12;commando8
-          - tlite;tpro;tprov2;lr3pro
-          - t20;t14
-          - tx12;tx12mk2;boxer
+          - pl18;pl18ev;pl18u
+          - t12max
+          - t15;t16;t18
+          - zorro;pocket;mt12;commando8
+          - tprov2;tpros;bumblebee
+          - t20;t20v2;t14
+          - tx12mk2;boxer;gx12
           - tx16s
-          - x10;x10-access
+          - f16
+          - v16
+          - x10;x10express
           - x12s
-          - x7;x7-access
-          - x9d;x9dp;x9dp2019
+          - x7access
+          - x9dp2019
           - x9e;x9e-hall
-          - x9lite;x9lites
-          - xlite;xlites
+          - mt12
+          - nb4p
+          - st16
     container:
       image: ghcr.io/edgetx/edgetx-dev:latest
       volumes:
         - ${{ github.workspace }}:/src
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -49,13 +52,14 @@ jobs:
         run: ./tools/build-gh.sh
 
       - name: Package firmware ${{ matrix.target }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: edgetx-firmware-nightly
+          name: edgetx-firmware-nightly-${{ matrix.target }}
           path: |
             fw.json
             LICENSE
             *.bin
+            *.uf2
           retention-days: 15
           if-no-files-found: error
 
@@ -65,10 +69,11 @@ jobs:
     needs: build
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: edgetx-firmware-nightly
+          pattern: edgetx-firmware-nightly-*
           path: edgetx-firmware-nightly
+          merge-multiple: true
 
       - name: Compose release filename
         run: echo "release_filename=edgetx-firmware-nightly-${GITHUB_SHA::8}.zip" >> $GITHUB_ENV
@@ -78,8 +83,8 @@ jobs:
         with:
           args: zip -qq -j -r ${{ env.release_filename }} ./edgetx-firmware-nightly
 
-      - name: Deploy release
-        uses: marvinpinto/action-automatic-releases@latest
+      - name: Deploy nightly release
+        uses: crowbarmaster/GH-Automatic-Releases@latest
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: 'nightly'

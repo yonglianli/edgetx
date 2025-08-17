@@ -19,25 +19,21 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 #define MODEL_SPECIAL_FUNC_1ST_COLUMN           (0)
 #define MODEL_SPECIAL_FUNC_2ND_COLUMN           (4*FW-1)
 #define MODEL_SPECIAL_FUNC_3RD_COLUMN           (15*FW-3)
-#if defined(GRAPHICS)
-  #define MODEL_SPECIAL_FUNC_4TH_COLUMN         (19 * FW - 3)
-  #define MODEL_SPECIAL_FUNC_4TH_COLUMN_ONOFF   (19 * FW - 3)
-  #define MODEL_SPECIAL_FUNC_5TH_COLUMN_ONOFF   (20 * FW + 1)
-#else
-  #define MODEL_SPECIAL_FUNC_4TH_COLUMN_ONOFF   (17 * FW)
-  #define MODEL_SPECIAL_FUNC_4TH_COLUMN_ONOFF   (17 * FW)
-  #define MODEL_SPECIAL_FUNC_5TH_COLUMN_ONOFF   (18 * FW + 3)
-#endif
+#define MODEL_SPECIAL_FUNC_4TH_COLUMN           (19 * FW - 3)
+#define MODEL_SPECIAL_FUNC_4TH_COLUMN_ONOFF     (19 * FW - 3)
+#define MODEL_SPECIAL_FUNC_5TH_COLUMN_ONOFF     (20 * FW + 1)
 
-#if defined(SDCARD)
 #define SD_LOGS_PERIOD_MIN      1     // 0.1s  fastest period 
 #define SD_LOGS_PERIOD_MAX      255   // 25.5s slowest period 
-#define SD_LOGS_PERIOD_DEFAULT  10    // 1s    default period for newly created SF 
+#define SD_LOGS_PERIOD_DEFAULT  10    // 1s    default period for newly created SF
+
+#define PUSH_CS_DURATION_MIN 0       // 0     no duration : as long as switch is true
+#define PUSH_CS_DURATION_MAX 255     // 25.5s longest duration
 
 void onCustomFunctionsFileSelectionMenu(const char * result)
 {
@@ -76,9 +72,11 @@ void onCustomFunctionsFileSelectionMenu(const char * result)
     // The user choosed a file in the list
     memcpy(cfn->play.name, result, sizeof(cfn->play.name));
     storageDirty(eeFlags);
+    if (CFN_ACTIVE(cfn)  && (func == FUNC_PLAY_SCRIPT || func == FUNC_RGB_LED)) {
+      LUA_LOAD_MODEL_SCRIPTS();
+    }
   }
 }
-#endif // SDCARD
 
 #if defined(PCBTARANIS)
 void onAdjustGvarSourceLongEnterPress(const char * result)
@@ -92,6 +90,11 @@ void onAdjustGvarSourceLongEnterPress(const char * result)
   }
   else if (result == STR_MIXSOURCE) {
     CFN_GVAR_MODE(cfn) = FUNC_ADJUST_GVAR_SOURCE;
+    CFN_PARAM(cfn) = 0;
+    storageDirty(EE_MODEL);
+  }
+  else if (result == STR_MIXSOURCERAW) {
+    CFN_GVAR_MODE(cfn) = FUNC_ADJUST_GVAR_SOURCERAW;
     CFN_PARAM(cfn) = 0;
     storageDirty(EE_MODEL);
   }
@@ -150,6 +153,11 @@ void onCustomFunctionsMenu(const char * result)
 }
 #endif // PCBTARANIS
 
+static bool isAssignableFunctionAvailableSorted(int value)
+{
+  return isAssignableFunctionAvailable(cfn_sorted[value]);
+}
+
 void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomFunctionsContext * functionsContext)
 {
   int8_t sub = menuVerticalPosition - HEADER_LINE;
@@ -159,11 +167,10 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
 #if defined(PCBTARANIS)
 #if defined(PCBXLITE)
   // ENT LONG on xlite brings up switch type menu, so this menu is activated with SHIFT + ENT LONG
-  if (menuHorizontalPosition==0 && event==EVT_KEY_LONG(KEY_ENTER) && keysGetState(KEY_SHIFT) && !READ_ONLY()) {
+  if (menuHorizontalPosition==0 && event==EVT_KEY_LONG(KEY_ENTER) && keysGetState(KEY_SHIFT)) {
 #else
-  if (menuHorizontalPosition<0 && event==EVT_KEY_LONG(KEY_ENTER) && !READ_ONLY()) {
+  if (menuHorizontalPosition<0 && event==EVT_KEY_LONG(KEY_ENTER)) {
 #endif
-    killEvents(event);
     CustomFunctionData *cfn = &functions[sub];
     if (!CFN_EMPTY(cfn))
       POPUP_MENU_ADD_ITEM(STR_COPY);
@@ -201,7 +208,11 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
           }
           else {
             drawSwitch(MODEL_SPECIAL_FUNC_1ST_COLUMN, y, CFN_SWITCH(cfn), attr | ((functionsContext->activeSwitches & ((MASK_CFN_TYPE)1 << k)) ? BOLD : 0));
-            if (active || AUTOSWITCH_ENTER_LONG()) CHECK_INCDEC_SWITCH(event, CFN_SWITCH(cfn), SWSRC_FIRST, SWSRC_LAST, eeFlags, isSwitchAvailableInCustomFunctions);
+            if (active || AUTOSWITCH_ENTER_LONG()) {
+              if (event == EVT_KEY_LONG(KEY_ENTER))
+                killEvents(event);
+              CHECK_INCDEC_SWITCH(event, CFN_SWITCH(cfn), SWSRC_FIRST, SWSRC_LAST, eeFlags, isSwitchAvailableInCustomFunctions);
+            }
           }
           if (func == FUNC_OVERRIDE_CHANNEL && functions != g_model.customFn) {
             func = CFN_FUNC(cfn) = func+1;
@@ -212,14 +223,18 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
           if (CFN_SWITCH(cfn)) {
             lcdDrawText(MODEL_SPECIAL_FUNC_2ND_COLUMN, y, funcGetLabel(func), attr);
             if (active) {
-              CFN_FUNC(cfn) = checkIncDec(event, CFN_FUNC(cfn), 0, FUNC_MAX-1, eeFlags, isAssignableFunctionAvailable);
+              Functions newFunc = cfn_sorted[checkIncDec(event, getFuncSortIdx(CFN_FUNC(cfn)), 0, FUNC_MAX-1, eeFlags, isAssignableFunctionAvailableSorted)];
+              // If changing from Lua script then reload to remove old reference
+              if ((CFN_FUNC(cfn) == FUNC_PLAY_SCRIPT || CFN_FUNC(cfn) == FUNC_RGB_LED) && newFunc != FUNC_PLAY_SCRIPT && newFunc != FUNC_RGB_LED)
+                LUA_LOAD_MODEL_SCRIPTS();
+              CFN_FUNC(cfn) = newFunc;
               if (checkIncDec_Ret) CFN_RESET(cfn);
             }
           }
           else {
             j = 5; // skip other fields
             if (sub==k && menuHorizontalPosition > 0) {
-              repeatLastCursorMove(event);
+              repeatLastCursorHorMove(event);
             }
           }
           break;
@@ -242,25 +257,36 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
               lcdDrawText(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, STR_CHANS, attr);
             else
               drawSource(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, MIXSRC_FIRST_STICK + param - 1, attr);
+            if (active) CHECK_INCDEC_MODELVAR_ZERO(event, CFN_CH_INDEX(cfn), maxParam);
           }
 #if defined(GVARS)
           else if (func == FUNC_ADJUST_GVAR) {
             maxParam = MAX_GVARS - 1;
             drawStringWithIndex(lcdNextPos + 2, y, STR_GV, CFN_GVAR_INDEX(cfn)+1, attr);
             if (active) CFN_GVAR_INDEX(cfn) = checkIncDec(event, CFN_GVAR_INDEX(cfn), 0, maxParam, eeFlags);
-            break;
           }
 #endif // GVARS
           else if (func == FUNC_SET_TIMER) {
-            maxParam = MAX_TIMERS - 1;
-            lcdDrawTextAtIndex(lcdNextPos, y, STR_VFSWRESET, CFN_TIMER_INDEX(cfn), attr);
-            if (active) CFN_TIMER_INDEX(cfn) = checkIncDec(event, CFN_TIMER_INDEX(cfn), 0, maxParam, eeFlags, isTimerSourceAvailable);
-            break;
+            if (timersSetupCount()> 0) {
+              maxParam = MAX_TIMERS - 1;
+              lcdDrawTextAtIndex(lcdNextPos, y, STR_VFSWRESET, CFN_TIMER_INDEX(cfn), attr);
+              if (active) CFN_TIMER_INDEX(cfn) = checkIncDec(event, CFN_TIMER_INDEX(cfn), 0, maxParam, eeFlags, isTimerSourceAvailable);
+            } else {
+              lcdDrawText(lcdNextPos + FW, y, STR_NO_TIMERS, 0);
+              if (attr)
+                repeatLastCursorHorMove(event);
+            }
           }
+#if defined(FUNCTION_SWITCHES)
+          else if (func == FUNC_PUSH_CUST_SWITCH) {
+            uint8_t sw = switchGetSwitchFromCustomIdx(CFN_CS_INDEX(cfn));
+            lcdDrawText(lcdNextPos + 5, y, switchGetDefaultName(sw), attr);
+            if (active) CFN_CS_INDEX(cfn) = switchGetCustomSwitchIdx(checkIncDec(event, sw, 0, switchGetMaxSwitches() - 1, eeFlags, switchIsCustomSwitch));
+          }
+#endif          
           else if (attr) {
-            repeatLastCursorMove(event);
+            repeatLastCursorHorMove(event);
           }
-          if (active) CHECK_INCDEC_MODELVAR_ZERO(event, CFN_CH_INDEX(cfn), maxParam);
           break;
         }
 
@@ -296,8 +322,12 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
           }
 #endif
           else if (func == FUNC_SET_TIMER) {
-            getMixSrcRange(MIXSRC_FIRST_TIMER, val_min, val_max);
-            drawTimer(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr|LEFT, attr);
+            if (timersSetupCount() > 0) {
+              getMixSrcRange(MIXSRC_FIRST_TIMER, val_min, val_max);
+              drawTimer(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr|LEFT, attr);
+            } else if (attr) {
+              repeatLastCursorHorMove(event);
+            }
           }
 #if defined(AUDIO)
           else if (func == FUNC_PLAY_SOUND) {
@@ -305,18 +335,24 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
             lcdDrawTextAtIndex(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, STR_FUNCSOUNDS, val_displayed, attr);
           }
 #endif
+          else if (func == FUNC_SET_SCREEN) {
+            val_min = 0;
+            val_max = 4;
+            lcdDrawNumber(MODEL_SPECIAL_FUNC_3RD_COLUMN + 3*FW, y, val_displayed, attr|LEFT);
+          }
 #if defined(HAPTIC)
           else if (func == FUNC_HAPTIC) {
             val_max = 3;
             lcdDrawNumber(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr|LEFT);
           }
 #endif
-#if defined(SDCARD)
           else if (func == FUNC_PLAY_TRACK || func == FUNC_BACKGND_MUSIC || func == FUNC_PLAY_SCRIPT || func == FUNC_RGB_LED) {
             coord_t x = MODEL_SPECIAL_FUNC_3RD_COLUMN - 6;
             if (func == FUNC_PLAY_SCRIPT)
               x = x - 5 * FW;
             else if (func == FUNC_PLAY_TRACK)
+              x = x - 3 * FW;
+            else if (func == FUNC_BACKGND_MUSIC || func == FUNC_RGB_LED)
               x = x - 2 * FW;
             if (ZEXIST(cfn->play.name))
               lcdDrawSizedText(x, y, cfn->play.name, sizeof(cfn->play.name), attr);
@@ -346,18 +382,17 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
           }
           else if (func == FUNC_PLAY_VALUE) {
             val_max = MIXSRC_LAST_TELEM;
-            drawSource(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr);
+            drawSource(MODEL_SPECIAL_FUNC_3RD_COLUMN - (val_displayed == 0 ? 0 : 2 * FW), y, val_displayed, attr);
             if (active) {
-              INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE);
+              INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE | INCDEC_SOURCE_INVERT);
               INCDEC_ENABLE_CHECK(functionsContext == &globalFunctionsContext ? isSourceAvailableInGlobalFunctions : isSourceAvailable);
             }
           }
-#endif // SDCARD
           else if (func == FUNC_VOLUME) {
             val_max = MIXSRC_LAST_CH;
             drawSource(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr);
             if (active) {
-              INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE);
+              INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE | INCDEC_SOURCE_INVERT);
               INCDEC_ENABLE_CHECK(isSourceAvailable);
             }
           }
@@ -365,11 +400,19 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
             val_max = MIXSRC_LAST_CH;
             drawSource(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr);
             if (active) {
-              INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE);
+              INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE | INCDEC_SOURCE_INVERT);
               INCDEC_ENABLE_CHECK(isSourceAvailable);
             }
           }
-#if defined(SDCARD)
+#if defined(FUNCTION_SWITCHES)
+          else if (func == FUNC_PUSH_CUST_SWITCH) {
+            val_min = PUSH_CS_DURATION_MIN;
+            val_max = PUSH_CS_DURATION_MAX;
+
+            lcdDrawNumber(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr|PREC1|LEFT);
+            lcdDrawChar(lcdLastRightPos, y, 's');
+          }
+#endif
           else if (func == FUNC_LOGS) {
             val_min = SD_LOGS_PERIOD_MIN; 
             val_max = SD_LOGS_PERIOD_MAX;
@@ -381,7 +424,6 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
             lcdDrawNumber(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr|PREC1|LEFT);
             lcdDrawChar(lcdLastRightPos, y, 's');
           }
-#endif
 #if defined(GVARS)
           else if (func == FUNC_ADJUST_GVAR) {
             switch (CFN_GVAR_MODE(cfn)) {
@@ -391,10 +433,11 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
                 drawGVarValue(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, CFN_GVAR_INDEX(cfn), val_displayed, attr|LEFT);
                 break;
               case FUNC_ADJUST_GVAR_SOURCE:
+              case FUNC_ADJUST_GVAR_SOURCERAW:
                 val_max = MIXSRC_LAST_CH;
                 drawSource(MODEL_SPECIAL_FUNC_3RD_COLUMN, y, val_displayed, attr);
                 if (active) {
-                  INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE);
+                  INCDEC_SET_FLAG(eeFlags | INCDEC_SOURCE | INCDEC_SOURCE_INVERT);
                   INCDEC_ENABLE_CHECK(isSourceAvailable);
                 }
                 break;
@@ -410,28 +453,33 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
                 break;
             }
 
+#if !defined(NAVIGATION_X7)
+            // For X7 type navigation the ENTER long press is handled below
             if (attr && event==EVT_KEY_LONG(KEY_ENTER)) {
               killEvents(event);
               s_editMode = !s_editMode;
               active = true;
               CFN_GVAR_MODE(cfn) += 1;
-              CFN_GVAR_MODE(cfn) &= 0x03;
+              if (CFN_GVAR_MODE(cfn) > FUNC_ADJUST_GVAR_INCDEC)
+                CFN_GVAR_MODE(cfn) = FUNC_ADJUST_GVAR_CONSTANT;
               val_displayed = 0;
             }
+#endif
           }
 #endif // GVARS
           else if (attr) {
-            repeatLastCursorMove(event);
+            repeatLastCursorHorMove(event);
           }
 #if defined(NAVIGATION_X7)
           if (active || event==EVT_KEY_LONG(KEY_ENTER)) {
             CFN_PARAM(cfn) = CHECK_INCDEC_PARAM(event, val_displayed, val_min, val_max);
             if (func == FUNC_ADJUST_GVAR && attr && event==EVT_KEY_LONG(KEY_ENTER)) {
-              killEvents(event);
               if (CFN_GVAR_MODE(cfn) != FUNC_ADJUST_GVAR_CONSTANT)
                 POPUP_MENU_ADD_ITEM(STR_CONSTANT);
               if (CFN_GVAR_MODE(cfn) != FUNC_ADJUST_GVAR_SOURCE)
                 POPUP_MENU_ADD_ITEM(STR_MIXSOURCE);
+              if (CFN_GVAR_MODE(cfn) != FUNC_ADJUST_GVAR_SOURCERAW)
+                POPUP_MENU_ADD_ITEM(STR_MIXSOURCERAW);
               if (CFN_GVAR_MODE(cfn) != FUNC_ADJUST_GVAR_GVAR)
                 POPUP_MENU_ADD_ITEM(STR_GLOBALVAR);
               if (CFN_GVAR_MODE(cfn) != FUNC_ADJUST_GVAR_INCDEC)
@@ -449,7 +497,7 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
 
         case 4:
           if (HAS_REPEAT_PARAM(func)) {
-            if (func == FUNC_PLAY_SCRIPT) {
+            if (func == FUNC_PLAY_SCRIPT || func == FUNC_RGB_LED) {
               lcdDrawText(MODEL_SPECIAL_FUNC_4TH_COLUMN_ONOFF-3, y, (CFN_PLAY_REPEAT(cfn) == 0) ? "On" : "1x", attr);
               if (active) CFN_PLAY_REPEAT(cfn) = checkIncDec(event, CFN_PLAY_REPEAT(cfn), 0, 1, eeFlags);
             }
@@ -463,17 +511,26 @@ void menuSpecialFunctions(event_t event, CustomFunctionData * functions, CustomF
               else {
                 lcdDrawNumber(MODEL_SPECIAL_FUNC_4TH_COLUMN+2+FW, y, CFN_PLAY_REPEAT(cfn)*CFN_PLAY_REPEAT_MUL, RIGHT | attr);
               }
-              if (active) CFN_PLAY_REPEAT(cfn) = checkIncDec(event, CFN_PLAY_REPEAT(cfn)==CFN_PLAY_REPEAT_NOSTART?-1:CFN_PLAY_REPEAT(cfn), -1, 60/CFN_PLAY_REPEAT_MUL, eeFlags);
+              if (active)
+                CFN_PLAY_REPEAT(cfn) = checkIncDec(event, CFN_PLAY_REPEAT(cfn)==CFN_PLAY_REPEAT_NOSTART?-1:CFN_PLAY_REPEAT(cfn),
+                                                   -1,
+                                                   (func == FUNC_SET_SCREEN ? 0 : 60/CFN_PLAY_REPEAT_MUL),
+                                                   eeFlags);
             }
           }
           else if (attr) {
-            repeatLastCursorMove(event);
+            repeatLastCursorHorMove(event);
           }
           break;
         
         case 5:
             drawCheckBox(MODEL_SPECIAL_FUNC_5TH_COLUMN_ONOFF, y, CFN_ACTIVE(cfn), attr);
-            if (active) CFN_ACTIVE(cfn) = checkIncDec(event, CFN_ACTIVE(cfn), 0, 1, eeFlags);      
+            if (active) {
+              CFN_ACTIVE(cfn) = checkIncDec(event, CFN_ACTIVE(cfn), 0, 1, eeFlags);
+              if (checkIncDec_Ret && (func == FUNC_PLAY_SCRIPT || func == FUNC_RGB_LED)) {
+                LUA_LOAD_MODEL_SCRIPTS();
+              }
+            }
             break;
       }
     }

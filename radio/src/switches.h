@@ -21,9 +21,11 @@
 
 #pragma once
 
-#include <cinttypes>
+#include <stdint.h>
+#include <stdlib.h>
 
-#include "opentx_constants.h"
+#include "edgetx_types.h"
+#include "edgetx_constants.h"
 
 enum LogicalSwitchFamilies {
   LS_FAMILY_OFS,
@@ -41,6 +43,7 @@ typedef int16_t delayval_t;
 uint8_t lswFamily(uint8_t func);
 int16_t lswTimerValue(delayval_t val);
 
+bool getLSStickyState(uint8_t idx);
 void evalLogicalSwitches(bool isCurrentFlightmode=true);
 void logicalSwitchesCopyState(uint8_t src, uint8_t dst);
 void logicalSwitchesReset();
@@ -75,12 +78,32 @@ int switchLookupIdx(const char* name, size_t len);
 // note: no customizable switches
 char switchGetLetter(uint8_t idx);
 
-// note: no customizable switches
-const char* switchGetCanonicalName(uint8_t idx);
-
 // customizable switches supported
-void switchSetCustomName(uint8_t idx, const char* str, size_t len);
-const char* switchGetCustomName(uint8_t idx);
-bool switchHasCustomName(uint8_t idx);
+const char* fsSwitchGroupGetCanonicalName(uint8_t idx);
+uint8_t getSwitchCountInFSGroup(uint8_t index);
 
 SwitchConfig switchGetMaxType(uint8_t idx);
+
+// Restore switch state
+void logicalSwitchesInit(bool force);
+
+#if defined(FUNCTION_SWITCHES)
+void setFSStartupPosition();
+void evalFunctionSwitches();
+void setFSLogicalState(uint8_t index, uint8_t value);
+bool groupHasSwitchOn(uint8_t group);
+int firstSwitchInGroup(uint8_t group);
+int groupDefaultSwitch(uint8_t group);
+void setGroupSwitchState(uint8_t group);
+bool getFSPhysicalState(uint8_t index);
+
+//led_driver.cpp
+void fsLedOff(uint8_t index);
+void fsLedOn(uint8_t index);
+bool fsLedState(uint8_t index);
+void fsLedRGB(uint8_t index, uint32_t color);
+uint32_t fsGetLedRGB(uint8_t index);
+uint8_t getRGBColorIndex(uint32_t color);
+#endif
+
+void setAllPreflightSwitchStates();

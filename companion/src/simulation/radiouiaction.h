@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef RADIOUIACTION_H
-#define RADIOUIACTION_H
+#pragma once
 
 #include <QtCore>
 #include <QWidget>
@@ -27,7 +27,7 @@
 
 /*
  * This class is somewhat like a QAction but specific for the radio UI.
- * Actions can have one or more keyboard shortcuts associated with them (currently single-key only, w/out modifiers).
+ * Actions can have one or more keyboard shortcuts associated with them.
  */
 class RadioUiAction : public QObject
 {
@@ -42,7 +42,7 @@ class RadioUiAction : public QObject
      * @param text     Optional title for this action. The text and description are currently used in generated help text.
      * @param descript Optional longer description text for this action.
      */
-    RadioUiAction(int index = -1, int key = 0, const QString &text = "", const QString &descript = "", QWidget * parent = NULL):
+    RadioUiAction(int index = -1, int key = 0, const QString &text = "", const QString &descript = "", QWidget * parent = nullptr):
       m_hwIndex(index),
       m_active(false),
       m_keys(QList<int>()),
@@ -56,7 +56,7 @@ class RadioUiAction : public QObject
      * @param keys QList of Qt:Key codes to use as shortcuts.
      *   [See above for other params.]
      */
-    RadioUiAction(int index, QList<int> keys, const QString &text = "", const QString &descript = "", QWidget * parent = NULL):
+    RadioUiAction(int index, QList<int> keys, const QString &text = "", const QString &descript = "", QWidget * parent = nullptr):
       RadioUiAction(index, 0, text, descript, parent)
     {
       addKeys(keys);
@@ -115,11 +115,26 @@ class RadioUiAction : public QObject
     {
       if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if ((!keyEvent->modifiers() || keyEvent->modifiers() == Qt::KeypadModifier) && m_keys.contains(keyEvent->key())) {
+        // Note: Qt::KeypadModifier is required for arrow keys as they are considered part of the keypad
+        if (((keyEvent->modifiers() == Qt::NoModifier) || (keyEvent->modifiers() & Qt::ShiftModifier) || (keyEvent->modifiers() & Qt::KeypadModifier)) &&
+             m_keys.contains(keyEvent->key())) {
+          // qDebug() << "Event:" << event->type() << "Key:" << QString("0x%1").arg(keyEvent->key(), 8, 16, QLatin1Char( '0' )) << "Text:" << keyEvent->text() << "found";
           trigger(event->type() == QEvent::KeyPress);
           return true;
         }
+        else {
+          // qDebug() << "Key not found";
+          // qDebug() << "Event:" << event->type() <<
+          //             "Key:" << QString("0x%1").arg(keyEvent->key(), 8, 16, QLatin1Char( '0' )) <<
+          //             "Text:" << keyEvent->text() <<
+          //             "Shift:" << (bool)(keyEvent->modifiers() & Qt::ShiftModifier) <<
+          //             "Keypad:" << (bool)(keyEvent->modifiers() & Qt::KeypadModifier) <<
+          //             "Ctrl:" << (bool)(keyEvent->modifiers() & Qt::ControlModifier) <<
+          //             "Alt:" << (bool)(keyEvent->modifiers() & Qt::AltModifier) <<
+          //             "Meta:" << (bool)(keyEvent->modifiers() & Qt::MetaModifier);
+        }
       }
+
       return QObject::eventFilter(obj, event);
     }
 
@@ -164,15 +179,3 @@ class RadioUiAction : public QObject
     void pushed(int index);                  // only emitted on user interaction && when 'active' is true
     void pushed();
 };
-
-#endif // RADIOUIACTION_H
-
-
-
-
-
-
-
-
-
-

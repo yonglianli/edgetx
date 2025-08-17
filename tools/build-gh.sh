@@ -4,17 +4,9 @@
 set -e
 set -x
 
-# Allow variable core usage
-# default uses all cpu cores
-#
-if [ -f /usr/bin/nproc ]; then
-    num_cpus=$(nproc)
-elif [ -f /usr/sbin/sysctl ]; then
-    num_cpus=$(sysctl -n hw.logicalcpu)
-else
-    num_cpus=2
-fi
-: "${CORES:=$num_cpus}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/build-common.sh" 
+
 
 # If no build target, exit
 #: "${FLAVOR:=ALL}"
@@ -22,14 +14,6 @@ fi
 for i in "$@"
 do
 case $i in
-    --jobs=*)
-      CORES="${i#*=}"
-      shift
-      ;;
-    -j*)
-      CORES="${i#*j}"
-      shift
-      ;;
     -Wno-error)
       WERROR=0
       shift
@@ -86,133 +70,27 @@ target_names=$(echo "$FLAVOR" | tr '[:upper:]' '[:lower:]' | tr ';' '\n')
 
 for target_name in $target_names
 do
-    fw_name="${target_name}-${GIT_SHA_SHORT}.bin"
+    fw_name="${target_name}-${GIT_SHA_SHORT}"
     BUILD_OPTIONS=${COMMON_OPTIONS}
 
     echo "Building ${fw_name}"
-    case $target_name in
-
-        x9lite)
-            BUILD_OPTIONS+="-DPCB=X9LITE"
-            ;;
-        x9lites)
-            BUILD_OPTIONS+="-DPCB=X9LITES"
-            ;;
-        x7)
-            BUILD_OPTIONS+="-DPCB=X7"
-            ;;
-        x7-access)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=ACCESS -DPXX1=YES"
-            ;;
-        t12)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=T12 -DINTERNAL_MODULE_MULTI=ON"
-            ;;
-        tx12)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=TX12"
-            ;;
-        tx12mk2)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=TX12MK2"
-            ;;
-        boxer)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=BOXER"
-            ;;
-        t8)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=T8"
-            ;;
-        zorro)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=ZORRO"
-            ;;
-        pocket)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=POCKET"
-            ;;
-        mt12)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=MT12"
-            ;;
-        tlite)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=TLITE"
-            ;;
-        tlitef4)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=TLITEF4"
-            ;;
-        tpro)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=TPRO"
-            ;;
-        tprov2)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=TPROV2"
-            ;;
-        t20)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=T20"
-            ;;
-        t14)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=T14"
-            ;;
-        lr3pro)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=LR3PRO"
-            ;;
-        xlite)
-            BUILD_OPTIONS+="-DPCB=XLITE"
-            ;;
-        xlites)
-            BUILD_OPTIONS+="-DPCB=XLITES"
-            ;;
-        x9d)
-            BUILD_OPTIONS+="-DPCB=X9D"
-            ;;
-        x9dp)
-            BUILD_OPTIONS+="-DPCB=X9D+"
-            ;;
-        x9dp2019)
-            BUILD_OPTIONS+="-DPCB=X9D+ -DPCBREV=2019"
-            ;;
-        x9e)
-            BUILD_OPTIONS+="-DPCB=X9E"
-            ;;
-        x9e-hall)
-            BUILD_OPTIONS+="-DPCB=X9E -DSTICKS=HORUS"
-            ;;
-        x10)
-            BUILD_OPTIONS+="-DPCB=X10"
-            ;;
-        x10-access)
-            BUILD_OPTIONS+="-DPCB=X10 -DPCBREV=EXPRESS -DPXX1=YES"
-            ;;
-        x12s)
-            BUILD_OPTIONS+="-DPCB=X12S"
-            ;;
-        t16)
-            BUILD_OPTIONS+="-DPCB=X10 -DPCBREV=T16 -DINTERNAL_MODULE_MULTI=ON"
-            ;;
-        t18)
-            BUILD_OPTIONS+="-DPCB=X10 -DPCBREV=T18"
-            ;;
-        tx16s)
-            BUILD_OPTIONS+="-DPCB=X10 -DPCBREV=TX16S"
-            ;;
-        nv14)
-            BUILD_OPTIONS+="-DPCB=NV14"
-            ;;
-        el18)
-            BUILD_OPTIONS+="-DPCB=NV14 -DPCBREV=EL18"
-            ;;
-        pl18)
-            BUILD_OPTIONS+="-DPCB=PL18"
-            ;;
-        pl18ev)
-            BUILD_OPTIONS+="-DPCB=PL18 -DPCBREV=PL18EV"
-            ;;
-        commando8)
-            BUILD_OPTIONS+="-DPCB=X7 -DPCBREV=COMMANDO8"
-            ;;
-        *)
-            echo "Unknown target: $target_name"
-            exit 1
-            ;;
-    esac
+ 
+    if ! get_target_build_options "$target_name"; then
+        echo "Error: Failed to find a match for target '$target_name'"
+        exit 1
+    fi
 
     cmake ${BUILD_OPTIONS} "${SRCDIR}"
-    cmake --build . --target arm-none-eabi-configure
-    cmake --build arm-none-eabi -j"${CORES}" --target ${FIRMARE_TARGET}
+    cmake --build . --target arm-none-eabi-configure --parallel
+    cmake --build arm-none-eabi --target ${FIRMARE_TARGET} --parallel
 
     rm -f CMakeCache.txt arm-none-eabi/CMakeCache.txt
-    mv arm-none-eabi/firmware.bin "../${fw_name}"
+
+    #if [ -f arm-none-eabi/firmware.uf2 ]; then
+    if [ "$target_name" = "st16" ]; then
+        mv arm-none-eabi/firmware.uf2 "../${fw_name}.uf2"
+    else
+        mv arm-none-eabi/firmware.bin "../${fw_name}.bin"
+    fi
+    
 done

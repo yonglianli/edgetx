@@ -19,12 +19,13 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _DEFINITIONS_H_
-#define _DEFINITIONS_H_
+#pragma once
 
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
+
+#include "memory_sections.h"
 
 #if !defined(M_PI)
 #define M_PI         3.14159265358979323846   // pi
@@ -43,7 +44,7 @@
 #endif
 
 #if !defined(UNUSED)
-  #define UNUSED(x)           ((void)(x)) /* to avoid warnings */
+  #define UNUSED(X) (void)X      /* To avoid gcc/g++ warnings */
 #endif
 
 #if !defined(__ALIGNED)
@@ -56,34 +57,16 @@
 #endif
 #endif
 
-#if defined(SIMU)
-  #define __DMA
-#else
-  #define __DMA               __attribute__((section(".ram"), aligned(4)))
-#endif
-
-#if defined(CCMRAM) && !defined(SIMU)
-  #define __CCMRAM            __attribute__((section(".ccm"), aligned(4)))
-#else
-  #define __CCMRAM
-#endif
-
-#if defined(SDRAM) && !defined(SIMU)
-  #define __SDRAM   __attribute__((section(".sdram"), aligned(4)))
-#if defined(COLORLCD)
-  #define __SDRAMFONTS __attribute__((section(".sdram_fonts"), aligned(4)))
-#endif
-#else
-  #define __SDRAM   __DMA
-#if defined(COLORLCD)
-  #define __SDRAMFONTS __DMA
-#endif
-#endif
-
 #if __GNUC__
   #define PACK(__Declaration__) __Declaration__ __attribute__((__packed__))
 #else
   #define PACK(__Declaration__) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop) )
+#endif
+
+#if defined(SIMU)
+  #define PACK_NOT_SIMU(__Declaration__) __Declaration__
+#else
+  #define PACK_NOT_SIMU(__Declaration__) PACK(__Declaration__)
 #endif
 
 #if defined(SIMU)
@@ -109,5 +92,3 @@
   #define EXTERN_C_START
   #define EXTERN_C_END
 #endif
-
-#endif // _DEFINITIONS_H_

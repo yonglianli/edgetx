@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 /*
  *  TXID + RXID are already skipped in MULTI module to save memory+transmission time, format from Multi is:
@@ -144,6 +144,7 @@ enum
   AFHDS2A_ID_END = 0xFF,
 };
 
+// clang-format off
 #define FS(type,name,unit,precision) {type,unit,precision,name}
 
 const FlySkySensor flySkySensors[] = {
@@ -199,6 +200,7 @@ const FlySkySensor flySkySensors[] = {
 
   FS( 0x00,                            NULL,                      UNIT_RAW,               0 ),  // sentinel
 };
+// clang-format on
 
 int32_t getALT(uint32_t value);
 inline int setFlyskyTelemetryValue( int16_t type, uint8_t instance, int32_t value, uint32_t unit, uint32_t prec)

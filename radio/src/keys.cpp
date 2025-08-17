@@ -20,7 +20,7 @@
  */
 #include "keys.h"
 
-#include "opentx_helpers.h"
+#include "edgetx_helpers.h"
 #include "definitions.h"
 
 #include "timers_driver.h"
@@ -28,8 +28,8 @@
 #include "hal/rotary_encoder.h"
 #include "dataconstants.h"
 
-#if !defined(BOOT) && defined(USE_HATS_AS_KEYS)
-#include "opentx.h"
+#if !defined(BOOT) && (defined(USE_HATS_AS_KEYS) || defined(PCBXLITE))
+#include "edgetx.h"
 #endif
 
 // long key press minimum duration (x10ms),
@@ -58,7 +58,9 @@
 #define KSTATE_RPTDELAY             95
 #define KSTATE_START                97
 #define KSTATE_PAUSE                98
-#define KSTATE_KILLED               99
+
+#define KFLAG_KILLED                1
+#define KFLAG_LONG_PRESS            2
 
 // global last event
 event_t s_evt;
@@ -72,6 +74,7 @@ class Key
   uint8_t m_vals = 0;
   uint8_t m_cnt = 0;
   uint8_t m_state = 0;
+  uint8_t m_flags = 0;
 
  public:
   event_t input(bool val);
@@ -92,15 +95,24 @@ event_t Key::input(bool val)
 
   m_cnt++;
 
-  if (m_state && m_vals == 0) {
+  if ((m_state || m_flags) && m_vals == 0) {
     // key is released
-    if (m_state != KSTATE_KILLED) {
+#if defined(COLORLCD)
+    if ((m_flags & (KFLAG_KILLED)) == 0) {
+      evt = (m_flags & KFLAG_LONG_PRESS) ? _MSK_KEY_LONG_BRK : _MSK_KEY_BREAK;
+    }
+#else
+    if ((m_flags & (KFLAG_KILLED)) == 0) {
       evt = _MSK_KEY_BREAK;
     }
+#endif
     m_state = KSTATE_OFF;
     m_cnt = 0;
+    m_flags = 0;
     return evt;
   }
+
+  if (m_flags & KFLAG_KILLED) return evt;
 
   switch (m_state) {
     case KSTATE_OFF:
@@ -121,6 +133,7 @@ event_t Key::input(bool val)
       if (m_cnt == KEY_LONG_DELAY) {
         // generate long key press
         evt = _MSK_KEY_LONG;
+        m_flags |= KFLAG_LONG_PRESS;
       }
       if (m_cnt == KEY_REPEAT_DELAY) {
         m_state = 16;
@@ -150,9 +163,6 @@ event_t Key::input(bool val)
         m_cnt = 0;
       }
       break;
-
-    case KSTATE_KILLED: //killed
-      break;
   }
 
   return evt;
@@ -166,8 +176,8 @@ void Key::pauseEvents()
 
 void Key::killEvents()
 {
-  // TRACE("key %d killed", key());
-  m_state = KSTATE_KILLED;
+  if (m_state)
+    m_flags |= KFLAG_KILLED;
 }
 
 static Key keys[MAX_KEYS];
@@ -267,6 +277,30 @@ bool waitKeysReleased()
   return true;
 }
 
+#if defined(PCBXLITE) && !defined(BOOT)
+uint32_t _readTrims()
+{
+  uint32_t trims = readTrims();
+
+  uint8_t lr = trims & 0x3;
+  uint8_t ud = trims & 0xc;
+  bool shift = readKeys() & (1 << KEY_SHIFT);
+  // Mode 1 or 2 - AIL on right stick
+  bool ailRight = g_eeGeneral.stickMode < 2;
+  // Mode 2 or 4 - ELE on right stick
+  bool eleRight = (g_eeGeneral.stickMode & 1) == 1;
+  // Ensure non-shifted trims are AIL and ELE
+  if (ailRight == !shift) lr <<= 6;
+  if (eleRight == !shift) ud <<= 2;
+
+  return lr | ud;
+}
+
+#define READ_TRIMS() _readTrims()
+#else
+#define READ_TRIMS() readTrims()
+#endif
+
 bool keyDown()
 {
   return readKeys() || readTrims();
@@ -274,10 +308,10 @@ bool keyDown()
 
 bool trimDown(uint8_t idx)
 {
-  return readTrims() & (1 << idx);
+  return READ_TRIMS() & (1 << idx);
 }
 
-uint8_t keysGetState(uint8_t key)
+bool keysGetState(uint8_t key)
 {
   if (key >= MAX_KEYS) return 0;
   return keys[key].pressed();
@@ -292,6 +326,10 @@ uint8_t keysGetTrimState(uint8_t trim)
 #if defined(USE_HATS_AS_KEYS)
 #define ROTARY_EMU_KEY_REPEAT_RATE 12  // times 10 [ms]
 
+#if defined(BOOT)
+bool getHatsAsKeys() { return true; }
+bool getTransposeHatsForLUA() { return false; }
+#else
 static bool _trims_as_buttons = false;
 static bool _trims_as_buttons_LUA = false;
 
@@ -332,6 +370,7 @@ int16_t getEmuRotaryData()
 
   return 0;
 }
+#endif
 
 static void transpose_trims(uint32_t *keys)
 {
@@ -421,16 +460,29 @@ bool keysPollingCycle()
     trims_input = readTrims();
   }
 #else
-  trims_input = readTrims();
+  trims_input = READ_TRIMS();
 #endif
 
   for (int i = 0; i < MAX_KEYS; i++) {
     event_t evt = keys[i].input(keys_input & (1 << i));
     if (evt) {
-      // SHIFT key should not trigger REPT events
-      if (i != KEY_SHIFT || evt != _MSK_KEY_REPT) {
-        pushEvent(evt | i);
+      evt |= i;
+#if defined(KEYS_GPIO_REG_PAGEDN) && !defined(KEYS_GPIO_REG_PAGEUP)
+      // Radio with single PAGEDN key
+      if (evt == EVT_KEY_LONG(KEY_PAGEDN)) {
+        // Convert long press PAGEDN to short press PAGEUP
+        evt = EVT_KEY_BREAK(KEY_PAGEUP);
+        killEvents(KEY_PAGEDN);
       }
+#endif
+#if defined(KEYS_GPIO_REG_SHIFT)
+      // SHIFT key should not trigger REPT events
+      if (evt != EVT_KEY_REPT(KEY_SHIFT)) {
+        pushEvent(evt);
+      }
+#else
+      pushEvent(evt);
+#endif
     }
   }
 
@@ -500,10 +552,5 @@ bool rotaryEncoderPollingCycle()
 
   return false;
 }
-
-#elif !defined(COLORLCD)
-
-int8_t rotaryEncoderGetAccel() { return ROTENC_LOWSPEED; }
-void rotaryEncoderResetAccel() {}
 
 #endif

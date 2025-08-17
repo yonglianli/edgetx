@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _TELEMETRY_H_
-#define _TELEMETRY_H_
+#pragma once
 
 #include "dataconstants.h"
 #include "myeeprom.h"
@@ -111,10 +110,8 @@ PACK(struct CellValue
 
   void set(uint16_t newValue)
   {
-    if (newValue > 50) {
-      value = newValue;
-      state = 1;
-    }
+    value = newValue;
+    state = 1;
   }
 });
 
@@ -232,12 +229,16 @@ class OutputTelemetryBuffer {
     uint8_t destination;
 };
 
-extern OutputTelemetryBuffer outputTelemetryBuffer __DMA;
+extern OutputTelemetryBuffer outputTelemetryBuffer __DMA_NO_CACHE;
 
 #if defined(LUA)
 #include "fifo.h"
 #define LUA_TELEMETRY_INPUT_FIFO_SIZE  256
-extern Fifo<uint8_t, LUA_TELEMETRY_INPUT_FIFO_SIZE> * luaInputTelemetryFifo;
+typedef Fifo<uint8_t, LUA_TELEMETRY_INPUT_FIFO_SIZE> TelemetryQueue;
+extern TelemetryQueue* luaInputTelemetryFifo;
+void registerTelemetryQueue(TelemetryQueue*);
+void deregisterTelemetryQueue(TelemetryQueue*);
+void pushTelemetryDataToQueues(uint8_t* data, int length);
 #endif
 
 void processPXX2Frame(uint8_t idx, const uint8_t* frame,
@@ -274,5 +275,3 @@ struct ModuleSyncStatus
 };
 
 ModuleSyncStatus& getModuleSyncStatus(uint8_t moduleIdx);
-
-#endif // _TELEMETRY_H_

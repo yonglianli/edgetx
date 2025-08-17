@@ -19,6 +19,9 @@
  * GNU General Public License for more details.
  */
 
+#include "hal/gpio.h"
+#include "hal/i2c_driver.h"
+#include "stm32_gpio.h"
 #include "stm32_hal_ll.h"
 #include "stm32_hal.h"
 #include "stm32_i2c_driver.h"
@@ -26,23 +29,18 @@
 #include "stm32_exti_driver.h"
 
 #include "hal.h"
+#include "timers_driver.h"
 #include "tp_gt911.h"
 #include "delays_driver.h"
 
-#include "rtos.h"
-#include "opentx_types.h"
+#include "os/sleep.h"
+#include "edgetx_types.h"
 #include "debug.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #define TP_GT911_ID "911"
-
-#define TPRST_LOW()   LL_GPIO_ResetOutputPin(TOUCH_RST_GPIO, TOUCH_RST_GPIO_PIN)
-#define TPRST_HIGH()  LL_GPIO_SetOutputPin(TOUCH_RST_GPIO, TOUCH_RST_GPIO_PIN)
-
-#define TPINT_LOW()   LL_GPIO_ResetOutputPin(TOUCH_INT_GPIO, TOUCH_INT_GPIO_PIN)
-#define TPINT_HIGH()  LL_GPIO_SetOutputPin(TOUCH_INT_GPIO, TOUCH_INT_GPIO_PIN)
 
 #if defined (RADIO_T18)
 const uint8_t TOUCH_GT911_Cfg[] = {
@@ -446,62 +444,12 @@ static void _gt911_exti_isr(void)
   touchEventOccured = true;
 }
 
-static void TOUCH_AF_ExtiStop(void)
-{
-  stm32_exti_disable(TOUCH_INT_EXTI_Line);
-}
-
-static void TOUCH_AF_ExtiConfig(void)
-{
-  __HAL_RCC_SYSCFG_CLK_ENABLE();
-  LL_SYSCFG_SetEXTISource(TOUCH_INT_EXTI_Port, TOUCH_INT_EXTI_SysCfgLine);
-
-  stm32_exti_enable(TOUCH_INT_EXTI_Line,
-		    LL_EXTI_TRIGGER_RISING,
-		    _gt911_exti_isr);
-}
-
-static void TOUCH_AF_GPIOConfig(void)
-{
-  LL_GPIO_InitTypeDef gpioInit;
-  LL_GPIO_StructInit(&gpioInit);
-
-  stm32_gpio_enable_clock(TOUCH_RST_GPIO);
-  stm32_gpio_enable_clock(TOUCH_INT_GPIO);
-  
-  gpioInit.Mode = LL_GPIO_MODE_OUTPUT;
-  gpioInit.Speed = LL_GPIO_SPEED_FREQ_HIGH;
-  gpioInit.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  gpioInit.Pull = LL_GPIO_PULL_NO;
-
-  gpioInit.Pin = TOUCH_RST_GPIO_PIN;
-  LL_GPIO_Init(TOUCH_RST_GPIO, &gpioInit);
-  LL_GPIO_ResetOutputPin(TOUCH_RST_GPIO, TOUCH_RST_GPIO_PIN);
-
-  gpioInit.Pin = TOUCH_INT_GPIO_PIN;
-  LL_GPIO_Init(TOUCH_INT_GPIO, &gpioInit);
-  LL_GPIO_ResetOutputPin(TOUCH_INT_GPIO, TOUCH_INT_GPIO_PIN);
-}
-
-void TOUCH_AF_INT_Change(void)
-{
-  LL_GPIO_InitTypeDef gpioInit;
-  LL_GPIO_StructInit(&gpioInit);
-
-  gpioInit.Pin = TOUCH_INT_GPIO_PIN;
-  gpioInit.Mode = LL_GPIO_MODE_INPUT;
-  gpioInit.Speed = LL_GPIO_SPEED_FREQ_HIGH;
-  gpioInit.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  gpioInit.Pull = LL_GPIO_PULL_UP;
-  LL_GPIO_Init(TOUCH_INT_GPIO, &gpioInit);
-}
-
 void I2C_Init_Radio(void)
 {
   TRACE("GT911 I2C Init");
 
-  if (stm32_i2c_init(TOUCH_I2C_BUS, TOUCH_I2C_CLK_RATE) < 0) {
-    TRACE("GT911 ERROR: stm32_i2c_init failed");
+  if (i2c_init(TOUCH_I2C_BUS) < 0) {
+    TRACE("GT911 ERROR: i2c_init failed");
     return;
   }
 }
@@ -577,7 +525,7 @@ bool I2C_GT911_SendConfig(uint8_t cfgVer)
 
 void touchPanelDeInit(void)
 {
-  TOUCH_AF_ExtiStop();
+  gpio_int_disable(TOUCH_INT_GPIO);
   touchGT911Flag = false;
 }
 
@@ -588,25 +536,26 @@ bool touchPanelInit(void)
   uint8_t tmp[4] = {0};
 
   if (touchGT911Flag) {
-    TOUCH_AF_ExtiConfig();
+    gpio_init_int(TOUCH_INT_GPIO, GPIO_IN_PU, GPIO_RISING, _gt911_exti_isr);
     return true;
   } else {
     TRACE("Touchpanel init start ...");
 
-    TOUCH_AF_GPIOConfig();  // SET RST=OUT INT=OUT INT=LOW
+    gpio_init(TOUCH_RST_GPIO, GPIO_OUT, GPIO_PIN_SPEED_LOW);
+    gpio_init(TOUCH_INT_GPIO, GPIO_OUT, GPIO_PIN_SPEED_LOW);
     I2C_Init_Radio();
 
-    TPRST_LOW();
-    TPINT_HIGH();
+    gpio_clear(TOUCH_RST_GPIO);
+    gpio_set(TOUCH_INT_GPIO);
     delay_us(200);
 
-    TPRST_HIGH();
+    gpio_set(TOUCH_RST_GPIO);
     delay_ms(6);
 
-    TPINT_LOW();
+    gpio_clear(TOUCH_INT_GPIO);
     delay_ms(55);
 
-    TOUCH_AF_INT_Change();  // Set INT INPUT INT=LOW
+    gpio_init(TOUCH_INT_GPIO, GPIO_IN_PU, GPIO_PIN_SPEED_LOW);
 
     delay_ms(50);
 
@@ -651,7 +600,7 @@ bool touchPanelInit(void)
       }
       touchGT911Flag = true;
 
-      TOUCH_AF_ExtiConfig();
+      gpio_init_int(TOUCH_INT_GPIO, GPIO_IN_PU, GPIO_RISING, _gt911_exti_isr);
 
       return true;
     }
@@ -695,21 +644,41 @@ static const char *event2str(uint8_t ev)
 }
 #endif
 
+#if defined(CSD203_SENSOR)
+  extern bool IICReadStatusFlag;
+#endif
+
 struct TouchState touchPanelRead()
 {
   uint8_t state = 0;
 
   if (!touchEventOccured) return internalTouchState;
+#if defined(CSD203_SENSOR)
+  for(int a=0;a<6;a++)
+  {//IIC bus preemption
+    if(IICReadStatusFlag==false){
+      IICReadStatusFlag=true;
+      break;
+    } 
+    else if(a>6){
+      return internalTouchState;
+    }
+    delay_us(10);
+  }
+#endif  
 
   touchEventOccured = false;
 
-  uint32_t startReadStatus = RTOS_GET_MS();
+  uint32_t startReadStatus = timersGetMsTick();
   do {
     if (!I2C_GT911_ReadRegister(GT911_READ_XY_REG, &state, 1)) {
       // ledRed();
       touchGT911hiccups++;
       TRACE("GT911 I2C read XY error");
       if (!I2C_ReInit()) TRACE("I2C B1 ReInit failed");
+    #if defined(CSD203_SENSOR)
+      IICReadStatusFlag=false;
+    #endif  
       return internalTouchState;
     }
 
@@ -717,15 +686,15 @@ struct TouchState touchPanelRead()
       // ready
       break;
     }
-    RTOS_WAIT_MS(1);
-  } while (RTOS_GET_MS() - startReadStatus < GT911_TIMEOUT);
+    sleep_ms(1);
+  } while (timersGetMsTick() - startReadStatus < GT911_TIMEOUT);
 
   internalTouchState.deltaX = 0;
   internalTouchState.deltaY = 0;
   TRACE("touch state = 0x%x", state);
   if (state & 0x80u) {
     uint8_t pointsCount = (state & 0x0Fu);
-    uint32_t now = RTOS_GET_MS();
+    uint32_t now = timersGetMsTick();
     internalTouchState.tapCount = 0;
 
     if (pointsCount > 0 && pointsCount <= GT911_MAX_TP) {
@@ -735,6 +704,9 @@ struct TouchState touchPanelRead()
         touchGT911hiccups++;
         TRACE("GT911 I2C data read error");
         if (!I2C_ReInit()) TRACE("I2C B1 ReInit failed");
+      #if defined(CSD203_SENSOR)
+        IICReadStatusFlag=false;
+      #endif  
         return internalTouchState;
       }
         
@@ -785,6 +757,9 @@ struct TouchState touchPanelRead()
   }
 
   TRACE("touch event = %s", event2str(internalTouchState.event));
+#if defined(CSD203_SENSOR)
+  IICReadStatusFlag=false;
+#endif
   return internalTouchState;
 }
 

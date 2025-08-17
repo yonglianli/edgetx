@@ -36,7 +36,7 @@
 #endif
 
 #if !defined(BOOT)
-  #include "opentx.h"
+  #include "edgetx.h"
   #include "lua/lua_api.h"
 #else
   #include "dataconstants.h"
@@ -47,7 +47,7 @@
 #endif
 
 #if defined(DEBUG_SEGGER_RTT)
-  #include "thirdparty/Segger_RTT/RTT/SEGGER_RTT.h"
+  #include "thirdparty/Segger/SEGGER/SEGGER_RTT.h"
 #endif
 
 #define PRINTF_BUFFER_SIZE    128
@@ -218,8 +218,10 @@ static void serialSetCallBacks(int mode, void* ctx, const etx_serial_port_t* por
 #endif
 
   case UART_MODE_SBUS_TRAINER:
-    sbusSetAuxGetByte(ctx, getByte);
-    // TODO: setRxCb (see MODE_LUA)
+    sbusSetReceiveCtx(ctx, drv);
+    if (drv && drv->setIdleCb) {
+      drv->setIdleCb(ctx, sbusAuxFrameReceived, nullptr);
+    }
     break;
 
   case UART_MODE_TELEMETRY:
@@ -242,7 +244,7 @@ static void serialSetCallBacks(int mode, void* ctx, const etx_serial_port_t* por
 
 #if defined(INTERNAL_GPS)
   case UART_MODE_GPS:
-    gpsSetSerialDriver(ctx, drv);
+    gpsSetSerialDriver(ctx, drv, GPS_PROTOCOL_AUTO);
     break;
 #endif
 
@@ -455,8 +457,13 @@ void serialInit(uint8_t port_nr, int mode)
 
   serialSetupPort(mode, params);
 
-  if (mode == UART_MODE_NONE ||
-      !port || params.baudrate == 0 ||
+  if (mode == UART_MODE_NONE ) {
+    // Even if port has no mode, port power needs to be set
+    serialSetPowerState(port_nr);
+    return;
+  }
+
+  if (!port || params.baudrate == 0 ||
       !port->uart || !port->uart->init)
     return;
   
@@ -481,20 +488,10 @@ void serialInit(uint8_t port_nr, int mode)
 
 void initSerialPorts()
 {
-#if defined(DEBUG)
-  // AUX1 and serialPortStates was already initialized early in DEBUG config
-  for (uint8_t port_nr = 0; port_nr < MAX_AUX_SERIAL; port_nr++) {
-    if (port_nr != SP_AUX1) {
-      auto mode = getSerialPortMode(port_nr);
-      serialInit(port_nr, mode);
-    }
-  }
-#else
   for (uint8_t port_nr = 0; port_nr < MAX_AUX_SERIAL; port_nr++) {
     auto mode = getSerialPortMode(port_nr);
     serialInit(port_nr, mode);
   }
-#endif
 }
 
 int serialGetMode(uint8_t port_nr)

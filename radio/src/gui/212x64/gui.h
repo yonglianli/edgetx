@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _GUI_H_
-#define _GUI_H_
+#pragma once
 
 #include "gui_common.h"
 #include "lcd.h"
@@ -30,10 +29,6 @@
 #include "navigation/navigation.h"
 #include "common/stdlcd/draw_functions.h"
 
-#define HEADER_LINE                    0
-#define HEADER_LINE_COLUMNS
-
-#define DEFAULT_SCROLLBAR_X            (LCD_W-1)
 #define NUM_BODY_LINES                 (LCD_LINES-1)
 #define TEXT_VIEWER_LINES              NUM_BODY_LINES
 #define MENU_HEADER_HEIGHT             FH
@@ -50,11 +45,6 @@
 #define MIXES_2ND_COLUMN               (18*FW)
 
 #define MENUS_SCROLLBAR_WIDTH          2
-
-inline void drawFieldLabel(coord_t x, coord_t y, const char * str)
-{
-  lcdDrawText(0, y, str);
-}
 
 extern uint8_t modelBitmap[MODEL_BITMAP_SIZE];
 bool loadModelBitmap(char * name, uint8_t * bitmap);
@@ -84,14 +74,21 @@ typedef int choice_t;
 
 choice_t editChoice(coord_t x, coord_t y, const char *label,
                     const char *const *values, choice_t value, choice_t min,
-                    choice_t max, LcdFlags attr, event_t event,
-                    IsValueAvailable isValueAvailable = nullptr);
+                    choice_t max, LcdFlags attr, event_t event, coord_t lblX = 0);
+choice_t editChoice(coord_t x, coord_t y, const char *label,
+                    const char *const *values, choice_t value, choice_t min,
+                    choice_t max, LcdFlags attr, event_t event, coord_t lblX,
+                    IsValueAvailable isValueAvailable);
 
 uint8_t editCheckBox(uint8_t value, coord_t x, coord_t y, const char *label,
-                     LcdFlags attr, event_t event);
+                     LcdFlags attr, event_t event, coord_t lblX = 0);
 
 swsrc_t editSwitch(coord_t x, coord_t y, swsrc_t value, LcdFlags attr,
                    event_t event);
+
+uint16_t editSrcVarFieldValue(coord_t x, coord_t y, const char* title, uint16_t value,
+                              int16_t min, int16_t max, LcdFlags attr, event_t event,
+                              IsValueAvailable isValueAvailable, int16_t sourceMin, int16_t sourceMax);
 
 #if defined(GVARS)
 void drawGVarValue(coord_t x, coord_t y, uint8_t gvar, gvar_t value,
@@ -119,9 +116,8 @@ int16_t editGVarFieldValue(coord_t x, coord_t y, int16_t value, int16_t min,
 
 #endif
 
-void gvarWeightItem(coord_t x, coord_t y, MixData * md, LcdFlags attr, event_t event);
-
-void editCurveRef(coord_t x, coord_t y, CurveRef & curve, event_t event, LcdFlags flags);
+void editCurveRef(coord_t x, coord_t y, CurveRef & curve, event_t event, LcdFlags flags,
+                  IsValueAvailable isValueAvailable, int16_t sourceMin, int16_t sourceMax);
 
 extern uint8_t editNameCursorPos;
 
@@ -130,11 +126,11 @@ void editName(coord_t x, coord_t y, char *name, uint8_t size, event_t event,
 
 void editSingleName(coord_t x, coord_t y, const char *label, char *name,
                     uint8_t size, event_t event, uint8_t active,
-                    uint8_t old_editMode);
+                    uint8_t old_editMode, coord_t lblX = 0);
 
-uint8_t editDelay(coord_t y, event_t event, uint8_t attr, const char * str, uint8_t delay);
+uint8_t editDelay(coord_t y, event_t event, uint8_t attr, const char * str, uint8_t delay, uint8_t prec);
 
-#define EDIT_DELAY(y, event, attr, str, delay) editDelay(y, event, attr, str, delay)
+#define EDIT_DELAY(y, event, attr, str, delay, prec) editDelay(y, event, attr, str, delay, prec)
 
 void copySelection(char * dst, const char * src, uint8_t size);
 
@@ -146,7 +142,7 @@ extern int8_t s_copySrcRow;
 extern int8_t s_copyTgtOfs;
 extern uint8_t s_currIdx;
 extern uint8_t s_currIdxSubMenu;
-extern uint16_t s_currSrcRaw;
+extern mixsrc_t s_currSrcRaw;
 extern uint16_t s_currScale;
 extern uint8_t s_copySrcIdx;
 extern uint8_t s_copySrcCh;
@@ -169,10 +165,7 @@ void readModelNotes();
 
 void menuChannelsView(event_t event);
 
-void repeatLastCursorMove(event_t event);
-
-#define POS_HORZ_INIT(posVert)         ((COLATTR(posVert) & NAVIGATION_LINE_BY_LINE) ? -1 : 0)
-#define EDIT_MODE_INIT                 0 // TODO enum
+#define EDIT_MODE_INIT                 0
 
 void onSwitchLongEnterPress(const char *result);
 void onSourceLongEnterPress(const char *result);
@@ -194,5 +187,3 @@ FlightModesType editFlightModes(coord_t x, coord_t y, event_t event, FlightModes
 #define IS_MAIN_VIEW_DISPLAYED()       menuHandlers[0] == menuMainView
 #define IS_TELEMETRY_VIEW_DISPLAYED()  menuHandlers[0] == menuViewTelemetry
 #define IS_OTHER_VIEW_DISPLAYED()      (menuHandlers[0] == menuMainViewChannelsMonitor || menuHandlers[0] == menuChannelsView)
-
-#endif // _GUI_H_

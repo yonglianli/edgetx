@@ -23,12 +23,12 @@
 
 #include <stdint.h>
 
+// Match with /companion/src/simulation/simulateduiwidget.h
 enum EnumKeys {
   KEY_MENU,
   KEY_EXIT,
   KEY_ENTER,
 
-  KEY_PAGE,
   KEY_PAGEUP,
   KEY_PAGEDN,
 

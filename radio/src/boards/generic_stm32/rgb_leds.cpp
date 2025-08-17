@@ -22,68 +22,74 @@
 #include "stm32_pulse_driver.h"
 #include "rgb_leds.h"
 #include "hal.h"
-#include "opentx.h"
+#include "edgetx.h"
 
 #if defined(LED_STRIP_GPIO)
 
 #include "stm32_ws2812.h"
 #include "stm32_dma.h"
+#include "stm32_gpio.h"
+#include "hal/gpio.h"
+#include "os/timer.h"
 
-#if !defined(SIMU)
-#include <FreeRTOS/include/FreeRTOS.h>
-#include <FreeRTOS/include/timers.h>
-#endif
+static uint8_t _led_colors[WS2812_BYTES_PER_LED * LED_STRIP_LENGTH];
 
 extern const stm32_pulse_timer_t _led_timer;
 
-static TimerHandle_t rgbLedTimer = nullptr;
-static StaticTimer_t rgbLedTimerBuffer;
+static timer_handle_t _refresh_timer = TIMER_INITIALIZER;
 
 void rgbSetLedColor(uint8_t led, uint8_t r, uint8_t g, uint8_t b)
 {
   ws2812_set_color(led, r, g, b);
 }
 
-void rgbLedColorApply()
+uint32_t rgbGetLedColor(uint8_t led)
 {
-  ws2812_update(&_led_timer);;
+  return ws2812_get_color(led);
 }
 
-static void rgbLedTimerCb(TimerHandle_t xTimer)
+bool rgbGetState(uint8_t led)
 {
-  (void)xTimer;
+  return ws2812_get_state(led);
+}
 
+void rgbLedColorApply()
+{
   ws2812_update(&_led_timer);
 }
 
-void rgbLedStart()
+void rgbLedClearAll()
 {
-  if (!rgbLedTimer) {
-    rgbLedTimer =
-        xTimerCreateStatic("rgbLed", LED_STRIP_REFRESH_PERIOD / RTOS_MS_PER_TICK, pdTRUE, (void*)0,
-                           rgbLedTimerCb, &rgbLedTimerBuffer);
+  for (uint8_t i = 0; i < LED_STRIP_LENGTH; i++) {
+    ws2812_set_color(i, 0, 0, 0);
   }
-  
-  if (rgbLedTimer) {
-    if( xTimerStart( rgbLedTimer, 0 ) != pdPASS ) {
-      /* The timer could not be set into the Active state. */
-    }
+  ws2812_update(&_led_timer);
+}
+
+static void _refresh_cb(timer_handle_t* timer)
+{
+  (void)timer;
+  ws2812_update(&_led_timer);
+}
+
+static void rgbLedStart()
+{
+  if (!timer_is_created(&_refresh_timer)) {
+    timer_create(&_refresh_timer, _refresh_cb, "rgbled",
+                 LED_STRIP_REFRESH_PERIOD, true);
   }
+
+  timer_start(&_refresh_timer);
 }
 
 void rgbLedStop()
 {
-  if (rgbLedTimer) {
-    if( xTimerStop( rgbLedTimer, 5 / RTOS_MS_PER_TICK ) != pdPASS ) {
-      /* The timer could not be stopped. */
-    }
-  }
+  timer_stop(&_refresh_timer);
 }
 
 const stm32_pulse_timer_t _led_timer = {
-  .GPIOx = LED_STRIP_GPIO,
-  .GPIO_Pin = LED_STRIP_GPIO_PIN_DATA,
-  .GPIO_Alternate = LED_STRIP_GPIO_PIN_AF,
+  .GPIO = LED_STRIP_GPIO,
+  .GPIO_Alternate = LED_STRIP_GPIO_AF,
   .TIMx = LED_STRIP_TIMER,
   .TIM_Freq = LED_STRIP_TIMER_FREQ,
   .TIM_Channel = LED_STRIP_TIMER_CHANNEL,
@@ -94,6 +100,13 @@ const stm32_pulse_timer_t _led_timer = {
   .DMA_IRQn = LED_STRIP_TIMER_DMA_IRQn,
   .DMA_TC_CallbackPtr = nullptr,
 };
+
+void rgbLedInit()
+{
+  ws2812_init(&_led_timer, _led_colors, LED_STRIP_LENGTH, WS2812_GRB);
+  rgbLedClearAll();
+  rgbLedStart();
+}
 
 // Make sure the timer channel is supported
 static_assert(__STM32_PULSE_IS_TIMER_CHANNEL_SUPPORTED(LED_STRIP_TIMER_CHANNEL),

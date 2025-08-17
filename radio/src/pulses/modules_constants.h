@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MODULES_CONSTANTS_H_
-#define _MODULES_CONSTANTS_H_
+#pragma once
 
 #include "storage/yaml/yaml_defs.h"
 
@@ -124,7 +123,13 @@ enum MMDSM2Subtypes {
 
 enum ModuleSubtypePPM {
   PPM_PROTO_TLM_NONE,
-  PPM_PROTO_TLM_MLINK
+  PPM_PROTO_TLM_MLINK,
+  PPM_PROTO_TLM_SPORT
+};
+
+enum ModuleSubtypeSBUS {
+  SBUS_PROTO_TLM_NONE,
+  SBUS_PROTO_TLM_SPORT
 };
 
 enum ModuleSubtypeDSM2 {
@@ -159,5 +164,3 @@ enum AfhdsModes {
   AFHDS_SUBTYPE_PPM_SBUS,
   AFHDS_SUBTYPE_LAST = AFHDS_SUBTYPE_PPM_SBUS
 };
-
-#endif // _MODULES_CONSTANTS_H_

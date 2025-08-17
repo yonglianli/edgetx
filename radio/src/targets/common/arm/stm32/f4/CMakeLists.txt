@@ -24,6 +24,7 @@ if(NOT NATIVE_BUILD)
   add_library(stm32cube_ll OBJECT EXCLUDE_FROM_ALL
     # LL drivers
     ${STM32CUBE_DIR}/Src/stm32f4xx_ll_gpio.c
+    ${STM32CUBE_DIR}/Src/stm32f4xx_ll_fmc.c
     ${STM32CUBE_DIR}/Src/stm32f4xx_ll_tim.c
     ${STM32CUBE_DIR}/Src/stm32f4xx_ll_dma.c
     ${STM32CUBE_DIR}/Src/stm32f4xx_ll_usart.c
@@ -46,6 +47,8 @@ if(NOT NATIVE_BUILD)
     ${STM32CUBE_DIR}/Src/stm32f4xx_hal_dma.c
     ${STM32CUBE_DIR}/Src/stm32f4xx_hal_pcd.c
     ${STM32CUBE_DIR}/Src/stm32f4xx_hal_pcd_ex.c
+    ${STM32CUBE_DIR}/Src/stm32f4xx_hal_flash.c
+    ${STM32CUBE_DIR}/Src/stm32f4xx_hal_flash_ex.c
     ${STM32CUBE_DIR}/Src/stm32f4xx_hal_cortex.c
     
     ${STM32_COLORLCD_DRIVERS}
@@ -62,48 +65,35 @@ if(NOT NATIVE_BUILD)
 endif()
 
 # StdPeriph library
-set(STM32LIB_DIR ${THIRDPARTY_DIR}/STM32F4xx_DSP_StdPeriph_Lib_V1.8.0/Libraries)
-include_directories(${STM32LIB_DIR}/STM32F4xx_StdPeriph_Driver/inc)
+set(STM32LIB_DIR ${THIRDPARTY_DIR})
 include_directories(${STM32LIB_DIR}/CMSIS/Device/ST/STM32F4xx/Include)
 include_directories(${STM32LIB_DIR}/CMSIS/Include)
 
 add_definitions(-DSTM32F4)
 
-set(STM32_STDPERIPH_DIR ${STM32LIB_DIR}/STM32F4xx_StdPeriph_Driver)
-
-set(STM32_STDPERIPH_SRC
-  targets/common/arm/stm32/f4/system_stm32f4xx.c
-  ${STM32_STDPERIPH_DIR}/src/misc.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f4xx_gpio.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f4xx_dbgmcu.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f4xx_rcc.c
-  ${STM32_STDPERIPH_DIR}/src/stm32f4xx_flash.c
-)
-
 if(CPU_TYPE_FULL STREQUAL STM32F429xI)
-  set(STM32_STDPERIPH_SRC ${STM32_STDPERIPH_SRC}
-    boards/generic_stm32/startup/startup_stm32f42_43xxx.s
-    ${STM32_STDPERIPH_DIR}/src/stm32f4xx_fmc.c
-    ${STM32_STDPERIPH_DIR}/src/stm32f4xx_dma.c
-    )
-elseif (CPU_TYPE_FULL STREQUAL STM32F413xG)
-  set(STM32_STDPERIPH_SRC ${STM32_STDPERIPH_SRC}
-    boards/generic_stm32/startup/startup_stm32f413xx.s
+  set(CMSIS_SRC ${CMSIS_SRC}
+    targets/common/arm/stm32/f4/vectors_stm32f429xx.c
   )
 else()
-  set(STM32_STDPERIPH_SRC ${STM32_STDPERIPH_SRC}
-    boards/generic_stm32/startup/startup_stm32f40_41xxx.s
-    )  
+  set(CMSIS_SRC ${CMSIS_SRC}
+    targets/common/arm/stm32/f4/vectors_stm32f407xx.c
+  )  
 endif()
 
-add_library(stm32_stdperiph OBJECT EXCLUDE_FROM_ALL
-  ${STM32_STDPERIPH_SRC}
-  )
+add_library(cmsis INTERFACE)
 
-set(FIRMWARE_SRC ${FIRMWARE_SRC} $<TARGET_OBJECTS:stm32_stdperiph>)
-set(BOOTLOADER_SRC ${BOOTLOADER_SRC} $<TARGET_OBJECTS:stm32_stdperiph>)
+target_sources(cmsis INTERFACE
+  targets/common/arm/stm32/system_init.c
+  targets/common/arm/stm32/cortex_m_isr.c
+  targets/common/arm/stm32/f4/system_clock.c
+  targets/common/arm/stm32/f4/system_stm32f4xx.c
+  ${CMSIS_SRC}
+)
 
 if(NOT NATIVE_BUILD)
+  include_directories(targets/common/arm/stm32/f4)
+
   #
   # FreeRTOS port specific include
   #

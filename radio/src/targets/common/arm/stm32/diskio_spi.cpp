@@ -26,7 +26,10 @@
 
 #include "diskio_spi.h"
 #include "stm32_gpio_driver.h"
+#include "stm32_gpio.h"
+#include "hal/gpio.h"
 #include "sdcard_spi.h"
+
 
 #include "hal.h"
 
@@ -37,10 +40,10 @@
 
 static const stm32_spi_t _sd_spi_hw = {
     .SPIx = SD_SPI,
-    .SPI_GPIOx = SD_GPIO,
-    .SPI_Pins = SD_GPIO_PIN_SCK | SD_GPIO_PIN_MISO | SD_GPIO_PIN_MOSI,
-    .CS_GPIOx = SD_GPIO,
-    .CS_Pin = SD_GPIO_PIN_CS,
+    .SCK = SD_GPIO_PIN_SCK,
+    .MISO = SD_GPIO_PIN_MISO,
+    .MOSI = SD_GPIO_PIN_MOSI,
+    .CS = SD_GPIO_PIN_CS,
     .DMA = SD_SPI_DMA,
     .DMA_Channel = SD_SPI_DMA_CHANNEL,
     .txDMA_Stream = SD_SPI_DMA_TX_STREAM,
@@ -53,24 +56,8 @@ static const stm32_spi_t _sd_spi_hw = {
 
 static uint32_t _sdcard_sectors;
 
-static void _sd_present_gpio_init()
-{
-#if defined(SD_PRESENT_GPIO)
-  LL_GPIO_InitTypeDef pinInit;
-  LL_GPIO_StructInit(&pinInit);
-  pinInit.Pin = SD_PRESENT_GPIO_PIN;
-  pinInit.Mode = LL_GPIO_MODE_INPUT;
-  pinInit.Pull = LL_GPIO_PULL_UP;
-
-  stm32_gpio_enable_clock(SD_PRESENT_GPIO);
-  LL_GPIO_Init(SD_PRESENT_GPIO, &pinInit);
-#endif
-}
-
 static DSTATUS sdcard_spi_initialize(BYTE lun)
 {
-  _sd_present_gpio_init();
-
   sdcard_info_t card_info;
   if (sdcard_spi_init(&_sd_spi_hw, &card_info) != SDCARD_SPI_OK) {
     return STA_NOINIT;
@@ -86,7 +73,7 @@ static DSTATUS sdcard_spi_status(BYTE lun)
   DSTATUS stat = 0;
 
 #if defined(SD_PRESENT_GPIO)
-  if (LL_GPIO_IsInputPinSet(SD_PRESENT_GPIO, SD_PRESENT_GPIO_PIN)) {
+  if (gpio_read(SD_PRESENT_GPIO)) {
     stat |= STA_NODISK;
   }
 #endif

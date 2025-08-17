@@ -19,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _SDCARD_H_
-#define _SDCARD_H_
+#pragma once
 
 #include "ff.h"
 
@@ -37,7 +36,8 @@ extern FIL g_oLogFile;
 #define UNUSED_MODELS_PATH  MODELS_PATH PATH_SEPARATOR "UNUSED"
 #define RADIO_PATH          ROOT_PATH "RADIO"       // no trailing slash = important
 #define TEMPLATES_PATH      ROOT_PATH "TEMPLATES"
-#define PERS_TEMPL_PATH     TEMPLATES_PATH "/PERSONAL"
+#define PERS_TEMPL_PATH     TEMPLATES_PATH "/2.Personal"
+#define PERS_TEMPL_PATH_OLD TEMPLATES_PATH "/PERSONAL"
 #define LOGS_PATH           ROOT_PATH "LOGS"
 #define SCREENSHOTS_PATH    ROOT_PATH "SCREENSHOTS"
 #define SOUNDS_PATH         ROOT_PATH "SOUNDS/en"
@@ -46,7 +46,6 @@ extern FIL g_oLogFile;
 #define BITMAPS_PATH        ROOT_PATH "IMAGES"
 #define FIRMWARES_PATH      ROOT_PATH "FIRMWARE"
 #define AUTOUPDATE_FILENAME FIRMWARES_PATH PATH_SEPARATOR "autoupdate.frsk"
-#define EEPROMS_PATH        ROOT_PATH "EEPROM"
 #define BACKUP_PATH         ROOT_PATH "BACKUP"
 #define SCRIPTS_PATH        ROOT_PATH "SCRIPTS"
 #define WIZARD_PATH         SCRIPTS_PATH PATH_SEPARATOR "WIZARD"
@@ -62,11 +61,8 @@ extern FIL g_oLogFile;
 
 #define LEN_FILE_PATH_MAX   (sizeof(SCRIPTS_TELEM_PATH)+1)  // longest + "/"
 
-#if defined(SDCARD_YAML) || defined(SDCARD_RAW)
 #define RADIO_FILENAME      "radio.bin"
-const char RADIO_MODELSLIST_PATH[] = RADIO_PATH PATH_SEPARATOR "models.txt";
 const char RADIO_SETTINGS_PATH[] = RADIO_PATH PATH_SEPARATOR RADIO_FILENAME;
-#if defined(SDCARD_YAML)
 #define LABELS_FILENAME     "labels.yml"
 #define MODELS_FILENAME     "models.yml"
 const char MODELSLIST_YAML_PATH[] = MODELS_PATH PATH_SEPARATOR MODELS_FILENAME;
@@ -77,10 +73,8 @@ const char RADIO_SETTINGS_TMPFILE_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "radio
 const char RADIO_SETTINGS_ERRORFILE_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "radio_error.yml";
 
 const char YAMLFILE_CHECKSUM_TAG_NAME[] = "checksum";
-#endif
 #define    SPLASH_FILE             "splash.png"
 #define    SHUTDOWN_SPLASH_FILE    "shutdown.png"
-#endif
 
 #define MODELS_EXT          ".bin"
 #define LOGS_EXT            ".csv"
@@ -91,8 +85,11 @@ const char YAMLFILE_CHECKSUM_TAG_NAME[] = "checksum";
 #define SCRIPT_EXT          ".lua"
 #define SCRIPT_BIN_EXT      ".luac"
 #define TEXT_EXT            ".txt"
+#if defined(FIRMWARE_FORMAT_UF2)
+#define FIRMWARE_EXT        ".uf2"
+#else
 #define FIRMWARE_EXT        ".bin"
-#define EEPROM_EXT          ".bin"
+#endif
 #define SPORT_FIRMWARE_EXT  ".frk"
 #define FRSKY_FIRMWARE_EXT  ".frsk"
 #define MULTI_FIRMWARE_EXT  ".bin"
@@ -161,5 +158,3 @@ const char * sdMoveFile(const char * srcFilename, const char * srcDir, const cha
 #define LIST_NONE_SD_FILE   1
 #define LIST_SD_FILE_EXT    2
 bool sdListFiles(const char * path, const char * extension, const uint8_t maxlen, const char * selection, uint8_t flags=0);
-
-#endif // _SDCARD_H_

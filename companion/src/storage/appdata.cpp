@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -55,7 +56,7 @@ void CompStoreObj::load(CompStoreObj * obj, const QString & name, const QString 
   const QMetaProperty & prop = obj->metaObject()->property(idx);
   const QVariant currValue = prop.read(obj);
   QVariant savedValue = m_settings.value(pathForKey(key, group), def);
-  if (savedValue.isValid() && savedValue.convert(currValue.userType()) && savedValue != currValue)
+  if (savedValue.isValid() && savedValue.convert(currValue.metaType()) && savedValue != currValue)
     prop.write(obj, savedValue);
 }
 
@@ -365,7 +366,6 @@ bool ComponentAssetData::existsOnDisk()
 
 ComponentData::ComponentData() : CompStoreObj(), index(-1)
 {
-  qRegisterMetaTypeStreamOperators<ComponentData::ReleaseChannel>("ComponentData::ReleaseChannel");
   CompStoreObj::addObjectMapping(propertyGroup(), this);
 }
 
@@ -424,11 +424,6 @@ AppData::AppData() :
   CompStoreObj(),
   m_sessionId(0)
 {
-  QMetaType::registerComparators<SimulatorOptions>();
-  qRegisterMetaTypeStreamOperators<SimulatorOptions>("SimulatorOptions");
-  qRegisterMetaTypeStreamOperators<AppData::NewModelAction>("AppData::NewModelAction");
-  qRegisterMetaTypeStreamOperators<AppData::UpdateCheckFreq>("AppData::UpdateCheckFreq");
-
   CompStoreObj::addObjectMapping(propertyGroup(), this);
 
   firstUse = !hasCurrentSettings();
@@ -494,7 +489,7 @@ void AppData::saveNamedJS()
       return;
     }
   }
-  
+
   unsigned int oldestTime = namedJS[0].jsLastUsed();
   int oldestN = 0;
   for (int i = 1; i < MAX_NAMED_JOYSTICKS; i += 1) {

@@ -19,10 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _POPUPS_H_
-#define _POPUPS_H_
-
-#include <keys.h>
+#pragma once
 
 #define MESSAGEBOX_X                   8
 #define MESSAGEBOX_Y                   8
@@ -36,7 +33,7 @@
 #define WARNING_LINE_X                 12
 #define WARNING_LINE_Y                 MESSAGEBOX_Y + 2
 
-#define POPUP_MENU_MAX_LINES         12
+#define POPUP_MENU_MAX_LINES         13
 #define MENU_MAX_DISPLAY_LINES       6
 #define MENU_LINE_LENGTH             (LEN_MODEL_NAME+12)
 
@@ -45,6 +42,4 @@ enum {
   MENU_OFFSET_EXTERNAL
 };
 
-#include "../common/stdlcd/popups.h"
-
-#endif // _POPUPS_H_
+#include "common/stdlcd/popups_common.h"

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,6 +27,7 @@
 #include "yaml_ops.h"
 #include "yaml_generalsettings.h"
 #include "yaml_modeldata.h"
+#include "labelvalidator.h"
 
 #include <QMessageBox>
 
@@ -113,11 +115,14 @@ bool loadLabelsListFromYaml(RadioData::ModelLabels& labels,
       std::string lbl = it->first.as<std::string>();
       RadioData::LabelData ld;
       ld.name = QString::fromStdString(lbl);
-      if (lbls[lbl]["selected"])
-        ld.selected = lbls[lbl]["selected"].as<bool>();
-      else
-        ld.selected = false;
-      labels.append(ld);
+      YamlValidateLabel(ld.name);
+      if (!ld.name.isEmpty()) {
+        if (lbls[lbl]["selected"])
+          ld.selected = lbls[lbl]["selected"].as<bool>();
+        else
+          ld.selected = false;
+        labels.append(ld);
+      }
     }
   }
 

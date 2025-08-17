@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "ff.h"
 
 #include "analogs.h"
@@ -28,26 +28,18 @@
 #include "hal/switch_driver.h"
 #include "hal/usb_driver.h"
 
-#if defined(LIBOPENUI)
-  #include "libopenui.h"
-#endif
+#include "os/timer.h"
+#include "tasks/mixer_task.h"
 
 FIL g_oLogFile __DMA;
 uint8_t logDelay100ms;
 static tmr10ms_t lastLogTime = 0;
 
-#if !defined(SIMU)
-#include <FreeRTOS/include/FreeRTOS.h>
-#include <FreeRTOS/include/timers.h>
+static timer_handle_t loggingTimer = TIMER_INITIALIZER;
 
-#include "tasks/mixer_task.h"
-
-static TimerHandle_t loggingTimer = nullptr;
-static StaticTimer_t loggingTimerBuffer;
-
-static void loggingTimerCb(TimerHandle_t xTimer)
+static void loggingTimerCb(timer_handle_t* timer)
 {
-  (void)xTimer;
+  (void)timer;
   if (mixerTaskRunning()) {
     DEBUG_TIMER_START(debugTimerLoggingWakeup);
     logsWrite();
@@ -55,51 +47,39 @@ static void loggingTimerCb(TimerHandle_t xTimer)
   }
 }
 
-void loggingTimerStart()
+void loggingTimerStart(uint32_t period)
 {
-  if (!loggingTimer) {
-    loggingTimer =
-        xTimerCreateStatic("Logging", logDelay100ms*100 / RTOS_MS_PER_TICK, pdTRUE, (void*)0,
-                           loggingTimerCb, &loggingTimerBuffer);
+  if (!timer_is_created(&loggingTimer)) {
+    timer_create(&loggingTimer, loggingTimerCb, "logs", period, true);
   }
 
-  if (loggingTimer) {
-    if( xTimerStart( loggingTimer, 0 ) != pdPASS ) {
-      /* The timer could not be set into the Active state. */
-    }
-  }
+  timer_start(&loggingTimer);
 }
 
-void loggingTimerStop()
+void loggingTimerStop() { timer_stop(&loggingTimer); }
+
+bool loggingTimerIsRunning()
 {
-  if (loggingTimer) {
-    if( xTimerStop( loggingTimer, 120 / RTOS_MS_PER_TICK ) != pdPASS ) {
-      /* The timer could not be stopped. */
-    }
-    loggingTimer = nullptr;
-  }
+  return timer_is_active(&loggingTimer);
 }
 
-void initLoggingTimer() {                                       // called cyclically by main.cpp:perMain()
+void initLoggingTimer()
+{  // called cyclically by main.cpp:perMain()
   static uint8_t logDelay100msOld = 0;
 
-  if(loggingTimer == nullptr) {                                 // log Timer not running
+  if(!timer_is_active(&loggingTimer)) {                         // log Timer not running
     if(isFunctionActive(FUNCTION_LOGS) && logDelay100ms > 0) {  // if SF Logging is active and log rate is valid
-      loggingTimerStart();                                      // start log timer
+      loggingTimerStart(logDelay100ms * 100);                   // start log timer
     }  
   } else {                                                      // log timer is already running
     if(logDelay100msOld != logDelay100ms) {                     // if log rate was changed
       logDelay100msOld = logDelay100ms;                         // memorize new log rate
-
       if(logDelay100ms > 0) {
-        if(xTimerChangePeriod( loggingTimer, logDelay100ms*100, 0 ) != pdPASS ) {  // and restart timer with new log rate
-          /* The timer period could not be changed */
-        }
+        timer_set_period(&loggingTimer, logDelay100ms * 100);
       }
     }
   }
 }
-#endif
 
 void writeHeader();
 
@@ -115,58 +95,37 @@ void logsInit()
 
 const char * logsOpen()
 {
+  if (!sdMounted())
+    return STR_NO_SDCARD;
+
   // Determine and set log file filename
   FRESULT result;
 
   // /LOGS/modelnamexxxxxx_YYYY-MM-DD-HHMMSS.log
   char filename[sizeof(LOGS_PATH) + LEN_MODEL_NAME + 18 + 4 + 1];
 
-  if (!sdMounted())
-    return STR_NO_SDCARD;
-
   // check and create folder here
-  strcpy(filename, STR_LOGS_PATH);
+  char* tmp = strAppend(filename, STR_LOGS_PATH);
   const char * error = sdCheckAndCreateDirectory(filename);
   if (error) {
     return error;
   }
 
-  filename[sizeof(LOGS_PATH) - 1] = '/';
-  memcpy(&filename[sizeof(LOGS_PATH)], g_model.header.name, sizeof(g_model.header.name));
-  filename[sizeof(LOGS_PATH) + LEN_MODEL_NAME] = '\0';
-
-  uint8_t i = sizeof(LOGS_PATH) + LEN_MODEL_NAME - 1;
-  uint8_t len = 0;
-  while (i > sizeof(LOGS_PATH) - 1) {
-    if (!len && filename[i])
-      len = i+1;
-    if (len) {
-      if (!filename[i])
-        filename[i] = '_';
-    }
-    i--;
-  }
-
-  if (len == 0) {
-#if defined(EEPROM)
-    uint8_t num = g_eeGeneral.currModel + 1;
-#else
+  tmp = strAppend(tmp, "/");
+  if (g_model.header.name[0]) {
+    tmp = strAppend(tmp, sanitizeForFilename(g_model.header.name, LEN_MODEL_NAME));
+  } else {
     // TODO
     uint8_t num = 1;
-#endif
-    strcpy(&filename[sizeof(LOGS_PATH)], STR_MODEL);
-    filename[sizeof(LOGS_PATH) + PSIZE(TR_MODEL)] = (char)((num / 10) + '0');
-    filename[sizeof(LOGS_PATH) + PSIZE(TR_MODEL) + 1] = (char)((num % 10) + '0');
-    len = sizeof(LOGS_PATH) + PSIZE(TR_MODEL) + 2;
+    tmp = strAppend(tmp, STR_MODEL);
+    tmp = strAppendUnsigned(tmp, num, 2);
   }
-
-  char * tmp = &filename[len];
 
 #if defined(RTCLOCK)
   tmp = strAppendDate(tmp, true);
 #endif
 
-  strcpy(tmp, STR_LOGS_EXT);
+  strAppend(tmp, STR_LOGS_EXT);
 
   result = f_open(&g_oLogFile, filename, FA_OPEN_ALWAYS | FA_WRITE | FA_OPEN_APPEND);
   if (result != FR_OK) {
@@ -185,7 +144,7 @@ void logsClose()
   if (g_oLogFile.obj.fs && sdMounted()) {
     if (f_close(&g_oLogFile) != FR_OK) {
       // close failed, forget file
-      g_oLogFile.obj.fs = 0;
+      g_oLogFile.obj.fs = nullptr;
     }
     lastLogTime = 0;
   }
@@ -199,7 +158,6 @@ void writeHeader()
 #else
   f_puts("Time,", &g_oLogFile);
 #endif
-
 
   char label[TELEM_LABEL_LEN+7];
   for (int i=0; i<MAX_TELEMETRY_SENSORS; i++) {
@@ -224,19 +182,19 @@ void writeHeader()
   auto n_inputs = adcGetMaxInputs(ADC_INPUT_MAIN);
   for (uint8_t i = 0; i < n_inputs; i++) {
     const char* p = analogGetCanonicalName(ADC_INPUT_MAIN, i);
-    while (*p) { f_putc(*(p++), &g_oLogFile); }
-    f_putc(',', &g_oLogFile);
+    f_puts(p, &g_oLogFile);
+    f_puts(",", &g_oLogFile);
   }
 
   n_inputs = adcGetMaxInputs(ADC_INPUT_FLEX);
   for (uint8_t i = 0; i < n_inputs; i++) {
     if (!IS_POT_AVAILABLE(i)) continue;
     const char* p = analogGetCanonicalName(ADC_INPUT_FLEX, i);
-    while (*p) { f_putc(*(p++), &g_oLogFile); }
-    f_putc(',', &g_oLogFile);
+    f_puts(p, &g_oLogFile);
+    f_puts(",", &g_oLogFile);
   }
 
-  for (uint8_t i = 0; i < switchGetMaxSwitches(); i++) {
+  for (uint8_t i = 0; i < switchGetMaxAllSwitches(); i++) {
     if (SWITCH_EXISTS(i)) {
       char s[LEN_SWITCH_NAME + 2];
       char * temp;
@@ -305,7 +263,6 @@ void logsWrite()
         return;
       }
 
-
 #if defined(RTCLOCK)
       {
         static struct gtm utm;
@@ -323,8 +280,12 @@ void logsWrite()
       for (int i=0; i<MAX_TELEMETRY_SENSORS; i++) {
         if (isTelemetryFieldAvailable(i)) {
           TelemetrySensor & sensor = g_model.telemetrySensors[i];
-          TelemetryItem & telemetryItem = telemetryItems[i];
+          TelemetryItem telemetryItem;
+          
           if (sensor.logs) {
+            if(TELEMETRY_STREAMING() && !telemetryItems[i].isOld())
+              telemetryItem = telemetryItems[i];
+
             if (sensor.unit == UNIT_GPS) {
               if (telemetryItem.gps.longitude && telemetryItem.gps.latitude) {
                 div_t qr = div((int)telemetryItem.gps.latitude, 1000000);
@@ -376,7 +337,7 @@ void logsWrite()
           f_printf(&g_oLogFile, "%d,", calibratedAnalogs[offset + i]);
       }
 
-      for (uint8_t i = 0; i < switchGetMaxSwitches(); i++) {
+      for (uint8_t i = 0; i < switchGetMaxAllSwitches(); i++) {
         if (SWITCH_EXISTS(i)) {
           f_printf(&g_oLogFile, "%d,", getSwitchState(i));
         }

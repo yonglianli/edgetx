@@ -31,6 +31,7 @@ static volatile uint32_t _ms_ticks;
 static void _init_1ms_timer()
 {
   stm32_timer_enable_clock(MS_TIMER);
+  if ((MS_TIMER->CR1 & TIM_CR1_CEN) == TIM_CR1_CEN) return;
 
   _ms_ticks = 0;
   MS_TIMER->ARR = 999; // 1mS in uS
@@ -40,6 +41,7 @@ static void _init_1ms_timer()
   MS_TIMER->EGR = 0;
   MS_TIMER->CR1 = TIM_CR1_CEN | TIM_CR1_URS;
   MS_TIMER->DIER = TIM_DIER_UIE;
+
   NVIC_EnableIRQ(MS_TIMER_IRQn);
   NVIC_SetPriority(MS_TIMER_IRQn, 4);
 }
@@ -96,8 +98,6 @@ static inline void _interrupt_1ms()
       watchdogTimeout -= 1;
       WDG_RESET();  // Retrigger hardware watchdog
     }
-
-    per10ms();
   }
 }
 

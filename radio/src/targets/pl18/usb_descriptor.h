@@ -19,17 +19,30 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _USB_DESCRIPTOR_H_
-#define _USB_DESCRIPTOR_H_
+#pragma once
 
-#if defined(RADIO_PL18EV)
-#define USB_NAME                        "FlySky PL18EV"
-#define USB_MANUFACTURER                'F', 'l', 'y', 'S', 'k', 'y', ' ', ' '  /* 8 bytes */
-#define USB_PRODUCT                     'P', 'L', '1', '8', 'E', 'V', ' ', ' '  /* 8 Bytes */
-#else
-#define USB_NAME                        "FlySky PL18"
-#define USB_MANUFACTURER                'F', 'l', 'y', 'S', 'k', 'y', ' ', ' '  /* 8 bytes */
-#define USB_PRODUCT                     'P', 'L', '1', '8', ' ', ' ', ' ', ' '  /* 8 Bytes */
+#if defined(RADIO_PL18U)
+  #define USB_NAME                        "FlySky PL18Ultra"
+  #define USB_MANUFACTURER                'F', 'l', 'y', 'S', 'k', 'y', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                     'P', 'L', '1', '8', 'U', ' ', ' ', ' '  /* 8 Bytes */
+#elif defined(RADIO_EL18)
+  #define USB_NAME                        "Flysky EL18"
+  #define USB_MANUFACTURER                'F', 'l', 'y', 's', 'k', 'y', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                     'E', 'L', '1', '8', ' ', ' ', ' ', ' '  /* 8 Bytes */
+#elif defined(RADIO_NV14)
+  #define USB_NAME                        "Flysky NV14"
+  #define USB_MANUFACTURER                'F', 'l', 'y', 's', 'k', 'y', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                     'N', 'V', '1', '4', ' ', ' ', ' ', ' '  /* 8 Bytes */
+#elif defined(RADIO_NB4P)
+  #define USB_NAME                        "FlySky NB4+"
+  #define USB_MANUFACTURER                'F', 'l', 'y', 'S', 'k', 'y', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                     'N', 'B', '4', '+', ' ', ' ', ' ', ' '  /* 8 Bytes */
+#elif defined(RADIO_PL18EV)
+  #define USB_NAME                        "FlySky PL18EV"
+  #define USB_MANUFACTURER                'F', 'l', 'y', 'S', 'k', 'y', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                     'P', 'L', '1', '8', 'E', 'V', ' ', ' '  /* 8 Bytes */
+#else 
+  #define USB_NAME                        "FlySky PL18"
+  #define USB_MANUFACTURER                'F', 'l', 'y', 'S', 'k', 'y', ' ', ' '  /* 8 bytes */
+  #define USB_PRODUCT                     'P', 'L', '1', '8', ' ', ' ', ' ', ' '  /* 8 Bytes */
 #endif
-
-#endif // _USB_DESCRIPTOR_H_

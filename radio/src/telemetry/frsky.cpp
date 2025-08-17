@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 static inline bool pushFrskyTelemetryData(bool is_sport, uint8_t data,
                                           uint8_t* buffer, uint8_t& len)
@@ -87,16 +87,16 @@ static inline bool pushFrskyTelemetryData(bool is_sport, uint8_t data,
   return false;
 }
 
-void processFrskyDTelemetryData(uint8_t module, uint8_t data, uint8_t* buffer, uint8_t& len)
+void processFrskyDTelemetryData(uint8_t module, uint8_t data, uint8_t* buffer, uint8_t* len)
 {
-  if (pushFrskyTelemetryData(false, data, buffer, len)) {
-    frskyDProcessPacket(module, buffer, len);
+  if (pushFrskyTelemetryData(false, data, buffer, *len)) {
+    frskyDProcessPacket(module, buffer, *len);
   }
 }
 
-void processFrskySportTelemetryData(uint8_t module, uint8_t data, uint8_t* buffer, uint8_t& len)
+void processFrskySportTelemetryData(uint8_t module, uint8_t data, uint8_t* buffer, uint8_t* len)
 {
-  if (pushFrskyTelemetryData(true, data, buffer, len)) {
-    sportProcessTelemetryPacket(module, buffer, len);
+  if (pushFrskyTelemetryData(true, data, buffer, *len)) {
+    sportProcessTelemetryPacket(module, buffer, *len);
   }
 }

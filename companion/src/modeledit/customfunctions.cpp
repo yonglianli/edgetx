@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -30,6 +31,7 @@ CustomFunctionsPanel::CustomFunctionsPanel(QWidget * parent, ModelData * model, 
   functions(model ? model->customFn : generalSettings.customFn),
   mediaPlayerCurrent(-1),
   mediaPlayer(nullptr),
+  audioOutput(new QAudioOutput()),
   modelsUpdateCnt(0)
 {
   lock = true;
@@ -40,6 +42,7 @@ CustomFunctionsPanel::CustomFunctionsPanel(QWidget * parent, ModelData * model, 
   harpicId = tabModelFactory->registerItemModel(CustomFunctionData::harpicItemModel());
   repeatId = tabModelFactory->registerItemModel(CustomFunctionData::repeatItemModel());
   repeatLuaId = tabModelFactory->registerItemModel(CustomFunctionData::repeatLuaItemModel());
+  repeatSetScreenId = tabModelFactory->registerItemModel(CustomFunctionData::repeatSetScreenItemModel());
   gvarAdjustModeId = tabModelFactory->registerItemModel(CustomFunctionData::gvarAdjustModeItemModel());
 
   tabFilterFactory = new FilteredItemModelFactory();
@@ -208,6 +211,8 @@ CustomFunctionsPanel::CustomFunctionsPanel(QWidget * parent, ModelData * model, 
     fswtchRepeat[i]->setProperty("index", i);
     if (functions[i].func == FuncPlayScript || functions[i].func == FuncRGBLed)
       fswtchRepeat[i]->setModel(tabModelFactory->getItemModel(repeatLuaId));
+    else if (functions[i].func == FuncSetScreen && !Boards::getCapability(firmware->getBoard(), Board::HasColorLcd))
+      fswtchRepeat[i]->setModel(tabModelFactory->getItemModel(repeatSetScreenId));
     else
       fswtchRepeat[i]->setModel(tabModelFactory->getItemModel(repeatId));
     fswtchRepeat[i]->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -241,16 +246,16 @@ CustomFunctionsPanel::~CustomFunctionsPanel()
   delete tabFilterFactory;
 }
 
-void CustomFunctionsPanel::onMediaPlayerStateChanged(QMediaPlayer::State state)
+void CustomFunctionsPanel::onMediaPlayerPlaybackStateChanged(QMediaPlayer::PlaybackState state)
 {
   if (state != QMediaPlayer::PlayingState)
     stopSound(mediaPlayerCurrent);
 }
 
-void CustomFunctionsPanel::onMediaPlayerError(QMediaPlayer::Error error)
+void CustomFunctionsPanel::onMediaPlayerErrorOccurred(QMediaPlayer::Error error, const QString &errorString)
 {
   stopSound(mediaPlayerCurrent);
-  QMessageBox::critical(this, CPN_STR_TTL_ERROR, tr("Error occurred while trying to play sound, possibly the file is already opened. (Err: %1 [%2])").arg(mediaPlayer ? mediaPlayer->errorString() : "").arg(error));
+  QMessageBox::critical(this, CPN_STR_TTL_ERROR, tr("Error occurred while trying to play sound, possibly the file is already opened. (Err: %1 [%2])").arg(errorString).arg(error));
 }
 
 bool CustomFunctionsPanel::playSound(int index)
@@ -284,13 +289,16 @@ bool CustomFunctionsPanel::playSound(int index)
   if (mediaPlayer)
     stopSound(mediaPlayerCurrent);
 
-  mediaPlayer = new QMediaPlayer(this, QMediaPlayer::LowLatency);
+  mediaPlayer = new QMediaPlayer(this);
+  mediaPlayer->setAudioOutput(audioOutput);
+
   if (functions[index].func == FuncPlaySound)
-    mediaPlayer->setMedia(QUrl(path.prepend("qrc")));
+    mediaPlayer->setSource(QUrl(path.prepend("qrc")));
   else
-    mediaPlayer->setMedia(QUrl::fromLocalFile(path));
-  connect(mediaPlayer, &QMediaPlayer::stateChanged, this, &CustomFunctionsPanel::onMediaPlayerStateChanged);
-  connect(mediaPlayer, static_cast<void(QMediaPlayer::*)(QMediaPlayer::Error)>(&QMediaPlayer::error), this, &CustomFunctionsPanel::onMediaPlayerError);
+    mediaPlayer->setSource(QUrl::fromLocalFile(path));
+
+  connect(mediaPlayer, &QMediaPlayer::playbackStateChanged, this, &CustomFunctionsPanel::onMediaPlayerPlaybackStateChanged);
+  connect(mediaPlayer, &QMediaPlayer::errorOccurred, this, &CustomFunctionsPanel::onMediaPlayerErrorOccurred);
   mediaPlayerCurrent = index;
   mediaPlayer->play();
   return true;
@@ -300,7 +308,9 @@ void CustomFunctionsPanel::stopSound(int index)
 {
   if (index > -1 && index < (int)DIM(playBT))
     playBT[index]->setChecked(false);
+
   mediaPlayerCurrent = -1;
+
   if (mediaPlayer) {
     disconnect(mediaPlayer, 0, this, 0);
     mediaPlayer->stop();
@@ -353,10 +363,8 @@ void CustomFunctionsPanel::functionEdited()
     functions[index].swtch = swtch;
     functions[index].func = (AssignFunc)fswtchFunc[index]->currentData().toInt();
     functions[index].enabled = true;
-    if (functions[index].func == FuncPlayScript || functions[index].func == FuncRGBLed)
-      fswtchRepeat[index]->setModel(tabModelFactory->getItemModel(repeatLuaId));
-    else
-      fswtchRepeat[index]->setModel(tabModelFactory->getItemModel(repeatId));
+    if (functions[index].func == FuncLogs)
+      functions[index].param = 10;  // 1 sec
     refreshCustomFunction(index);
     emit modified();
     lock = false;
@@ -383,7 +391,7 @@ void CustomFunctionsPanel::refreshCustomFunction(int i, bool modified)
   if (!cfn.isEmpty()) {
     widgetsMask |= CUSTOM_FUNCTION_SHOW_FUNC | CUSTOM_FUNCTION_ENABLE;
 
-    if (func >= FuncOverrideCH1 && func <= FuncOverrideCH32) {
+    if (func >= FuncOverrideCH1 && func <= FuncOverrideCHLast) {
       if (model) {
         int channelsMax = model->getChannelsMax(true);
         fswtchParam[i]->setDecimals(0);
@@ -398,6 +406,16 @@ void CustomFunctionsPanel::refreshCustomFunction(int i, bool modified)
       }
     }
     else if (func == FuncLogs) {
+      fswtchParam[i]->setDecimals(1);
+      fswtchParam[i]->setMinimum(0.1);
+      fswtchParam[i]->setMaximum(25.5);
+      fswtchParam[i]->setSingleStep(0.1);
+      if (modified)
+        cfn.param = fswtchParam[i]->value() * 10.0;
+      fswtchParam[i]->setValue(cfn.param / 10.0);
+      widgetsMask |= CUSTOM_FUNCTION_NUMERIC_PARAM;
+    }
+    else if (func >= FuncPushCustomSwitch1 && func <= FuncPushCustomSwitchLast) {
       fswtchParam[i]->setDecimals(1);
       fswtchParam[i]->setMinimum(0);
       fswtchParam[i]->setMaximum(25.5);
@@ -445,10 +463,10 @@ void CustomFunctionsPanel::refreshCustomFunction(int i, bool modified)
       populateFuncParamCB(fswtchParamT[i], func, cfn.param);
       widgetsMask |= CUSTOM_FUNCTION_SOURCE_PARAM;
     }
-    else if (func >= FuncSetTimer1 && func <= FuncSetTimer3) {
+    else if (func >= FuncSetTimer1 && func <= FuncSetTimerLast) {
       if (modified)
         cfn.param = fswtchParamTime[i]->timeInSeconds();
-      RawSourceRange range = RawSource(SOURCE_TYPE_SPECIAL, func - FuncSetTimer1 + 2).getRange(model, generalSettings);
+      RawSourceRange range = RawSource(SOURCE_TYPE_TIMER, func - FuncSetTimer1 + 1).getRange(model, generalSettings);
       fswtchParamTime[i]->setTimeRange((int)range.min, (int)range.max);
       fswtchParamTime[i]->setTime(cfn.param);
       widgetsMask |= CUSTOM_FUNCTION_TIME_PARAM;
@@ -464,6 +482,7 @@ void CustomFunctionsPanel::refreshCustomFunction(int i, bool modified)
         if (modified)
           cfn.repeatParam = fswtchRepeat[i]->currentData().toInt();
         widgetsMask |= CUSTOM_FUNCTION_REPEAT;
+        fswtchRepeat[i]->setModel(tabModelFactory->getItemModel(repeatId));
         fswtchRepeat[i]->setCurrentIndex(fswtchRepeat[i]->findData(cfn.repeatParam));
       }
       if (func == FuncPlayValue) {
@@ -540,14 +559,24 @@ void CustomFunctionsPanel::refreshCustomFunction(int i, bool modified)
         widgetsMask |= CUSTOM_FUNCTION_SOURCE_PARAM;
       }
       else if (func == FuncSetScreen) {
-        if (modified)
+        if (modified) {
           cfn.param = (uint8_t)fswtchParam[i]->value();
+          cfn.repeatParam = fswtchRepeat[i]->currentData().toInt();
+        }
         fswtchParam[i]->setDecimals(0);
-        fswtchParam[i]->setMinimum(1);
-        if(model)
-          fswtchParam[i]->setMaximum(model->getCustomScreensCount());
-        else
-          fswtchParam[i]->setMaximum(1);
+        if (Boards::getCapability(firmware->getBoard(), Board::HasColorLcd)) {
+          fswtchParam[i]->setMinimum(1);
+          if(model)
+            fswtchParam[i]->setMaximum(model->getCustomScreensCount());
+          else
+            fswtchParam[i]->setMaximum(1);
+        } else {
+          fswtchParam[i]->setMinimum(0);
+          fswtchParam[i]->setMaximum(4);
+          widgetsMask |= CUSTOM_FUNCTION_REPEAT;
+          fswtchRepeat[i]->setModel(tabModelFactory->getItemModel(repeatSetScreenId));
+          fswtchRepeat[i]->setCurrentIndex(fswtchRepeat[i]->findData(cfn.repeatParam));
+        }
         fswtchParam[i]->setSingleStep(1);
         fswtchParam[i]->setValue(cfn.param);
         widgetsMask |= CUSTOM_FUNCTION_NUMERIC_PARAM;
@@ -560,6 +589,7 @@ void CustomFunctionsPanel::refreshCustomFunction(int i, bool modified)
         cfn.repeatParam = fswtchRepeat[i]->currentData().toInt();
       }
       Helpers::populateFileComboBox(fswtchParamArmT[i], scriptsSet, cfn.paramarm);
+      fswtchRepeat[i]->setModel(tabModelFactory->getItemModel(repeatLuaId));
       fswtchRepeat[i]->setCurrentIndex(fswtchRepeat[i]->findData(cfn.repeatParam));
     }
     else {
@@ -663,39 +693,51 @@ void CustomFunctionsPanel::populateFuncParamCB(QComboBox *b, uint function, unsi
 {
   QStringList qs;
   b->setModel(new QStandardItemModel(b));  // clear combo box but not any shared item model
+
   if (function == FuncPlaySound) {
     b->setModel(tabModelFactory->getItemModel(playSoundId));
     b->setCurrentIndex(b->findData(value));
+    if (b->currentIndex() < 0)
+      b->setCurrentIndex(0);
   }
   else if (function == FuncPlayHaptic) {
     b->setModel(tabModelFactory->getItemModel(harpicId));
     b->setCurrentIndex(b->findData(value));
+    if (b->currentIndex() < 0)
+      b->setCurrentIndex(0);
   }
   else if (function == FuncReset) {
     b->setModel(tabFilterFactory->getItemModel(funcResetParamId));
     b->setCurrentIndex(b->findData(value));
+    if (b->currentIndex() < 0)
+      b->setCurrentIndex(0);
   }
   else if (function == FuncVolume || function == FuncBacklight) {
     b->setModel(tabFilterFactory->getItemModel(rawSourceInputsId));
     b->setCurrentIndex(b->findData(value));
+    if (b->currentIndex() < 0 && value == 0)
+      b->setCurrentIndex(b->count() / 2); // '----' not in list so set to first positive value
   }
   else if (function == FuncPlayValue) {
     b->setModel(tabFilterFactory->getItemModel(rawSourceAllId));
     b->setCurrentIndex(b->findData(value));
+    if (b->currentIndex() < 0 && value == 0)
+      b->setCurrentIndex(b->count() / 2); // '----' not in list so set to first positive value
   }
   else if (function >= FuncAdjustGV1 && function <= FuncAdjustGVLast) {
     switch (adjustmode) {
-      case 1:
+      case FUNC_ADJUST_GVAR_SOURCE:
+      case FUNC_ADJUST_GVAR_SOURCERAW:
         b->setModel(tabFilterFactory->getItemModel(rawSourceInputsId));
         b->setCurrentIndex(b->findData(value));
-        if (b->currentIndex() < 0)
-          b->setCurrentIndex(0);
+        if (b->currentIndex() < 0 && value == 0)
+          b->setCurrentIndex(b->count() / 2); // '----' not in list so set to first positive value
         break;
-      case 2:
+      case FUNC_ADJUST_GVAR_GVAR:
         b->setModel(tabFilterFactory->getItemModel(rawSourceGVarsId));
         b->setCurrentIndex(b->findData(value));
-        if (b->currentIndex() < 0)
-          b->setCurrentIndex(0);
+        if (b->currentIndex() < 0 && value == 0)
+          b->setCurrentIndex(b->count() / 2); // '----' not in list so set to first positive value
         break;
     }
   }

@@ -22,7 +22,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "opentx_types.h"
+#include "edgetx_types.h"
 
 // 12-bit values
 #define ADC_MAX_VALUE 4095
@@ -34,6 +34,8 @@
 // tune this value, bigger value - more filtering (range: 0-1) (see explanation below)
 #define ANALOG_SCALE            1
 #define JITTER_ALPHA            (1<<JITTER_FILTER_STRENGTH)
+
+#define ADC_MAX_FILTERED (ADC_MAX_VALUE >> ANALOG_SCALE)
 
 enum {
   ADC_INPUT_MAIN=0, // gimbals / wheel + throttle
@@ -77,16 +79,17 @@ struct etx_hal_adc_driver_t {
   bool (*init)();
   bool (*start_conversion)();
   void (*wait_completion)();
+
+  void (*set_input_mask)(uint32_t);
+  uint32_t (*get_input_mask)();
 };
 
 bool adcInit(const etx_hal_adc_driver_t* driver);
 // void adcDeInit();
 
-bool     adcRead();
-uint16_t getBatteryVoltage();
-uint16_t getRTCBatteryVoltage();
-uint16_t getAnalogValue(uint8_t index);
-void setAnalogValue(uint8_t index, uint16_t value);
+bool      adcRead();
+uint16_t  getAnalogValue(uint8_t index);
+void      setAnalogValue(uint8_t index, uint16_t value);
 uint16_t* getAnalogValues();
 
 // Run calibration steps:
@@ -111,10 +114,9 @@ extern JitterMeter<uint16_t> avgJitter[MAX_ANALOG_INPUTS];
 void getADC();
 uint16_t anaIn(uint8_t chan);
 uint32_t anaIn_diag(uint8_t chan);
-uint16_t getBatteryVoltage();
 
 // Warning:
-//   STM32 uses a 25K+25K voltage divider bridge to measure the battery voltage
+//   STM32 uses a voltage divider bridge to measure the battery voltage
 //   Measuring VBAT puts considerable drain (22 µA) on the battery instead of
 //   normal drain (~10 nA)
 void enableVBatBridge();
@@ -137,10 +139,9 @@ int adcGetInputIdx(const char* input, uint8_t len);
 const char* adcGetInputLabel(uint8_t type, uint8_t idx);
 const char* adcGetInputShortLabel(uint8_t type, uint8_t idx);
 
-// To be implemented by the target driver
-// int8_t adcGetVRTC();
-// int8_t adcGetVBAT();
-// const char* adcGetStickName(uint8_t idx);
-// const char* adcGetPotName(uint8_t idx);
-// uint8_t adcGetMaxSticks();
-// uint8_t adcGetMaxPots();
+void adcSetInputMask(uint32_t mask);
+uint32_t adcGetInputMask();
+
+// these 2 must be implemented as part of board drivers
+uint16_t getBatteryVoltage();
+uint16_t getRTCBatteryVoltage();

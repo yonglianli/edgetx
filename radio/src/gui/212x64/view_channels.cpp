@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 
 struct ViewChannelsState {
     bool longNames;
@@ -51,7 +51,7 @@ void menuChannelsView(event_t event)
       viewChannels.secondPage = !viewChannels.secondPage;
       break;
 
-    case EVT_KEY_FIRST(KEY_ENTER):
+    case EVT_KEY_BREAK(KEY_ENTER):
       viewChannels.mixersView = !viewChannels.mixersView;
       break;
   }

@@ -19,15 +19,20 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "hal/adc_driver.h"
 #include "gui/common/stdlcd/calibration.h"
 
 void menuRadioCalibration(event_t event)
 {
+  if (reusableBuffer.calib.state == CALIB_FINISHED) {
+    menuCalibrationState = CALIB_START;
+    popMenu();
+  }
+
   check_submenu_simple(event, 0);
   title(STR_MENUCALIBRATION);
-  menuCommonCalib(READ_ONLY() ? 0 : event);
+  menuCommonCalib(event);
   if (menuEvent) {
     menuCalibrationState = CALIB_START;
   }

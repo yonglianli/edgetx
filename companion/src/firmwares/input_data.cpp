@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -47,7 +48,7 @@ QString ExpoData::carryTrimToString() const
         return tr("OFF");
   }
   else if (carryTrim < 0 && abs(carryTrim) <= Boards::getBoardCapability(getCurrentBoard(), Board::NumTrims))
-    return RawSource(SOURCE_TYPE_TRIM, abs(carryTrim) - 1).toString();
+    return RawSource(SOURCE_TYPE_TRIM, abs(carryTrim)).toString();
   else
     return CPN_STR_UNKNOWN_ITEM;
 }
@@ -59,7 +60,7 @@ AbstractStaticItemModel * ExpoData::carryTrimItemModel()
   mdl->setName(AIM_EXPO_CARRYTRIM);
   ExpoData tmp = ExpoData();
 
-  tmp.srcRaw = RawSource(SOURCE_TYPE_STICK, 0);
+  tmp.srcRaw = RawSource(SOURCE_TYPE_INPUT, 0);
 
   for (int i = -CARRYTRIM_STICK_OFF; i <= Boards::getBoardCapability(getCurrentBoard(), Board::NumTrims); i++) {
     tmp.carryTrim = -i;

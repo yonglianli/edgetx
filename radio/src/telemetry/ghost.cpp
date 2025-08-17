@@ -22,7 +22,7 @@
 #include "ghost.h"
 #include "ghost_menu.h"
 
-#include "opentx.h"
+#include "edgetx.h"
 
 const char * const ghstRfProfileValue[GHST_RF_PROFILE_COUNT] = { "Auto", "Norm", "Race", "Pure", "Long", "Unused", "Race2", "Pure2" };
 const char * const ghstVtxBandName[GHST_VTX_BAND_COUNT] = { "- - -" , "IRC", "Race", "BandE", "BandB", "BandA" };
@@ -35,6 +35,7 @@ struct GhostSensor
   const char * name;
 };
 
+// clang-format off
 #define GS(id,name,unit,precision) {id,unit,precision,name}
 
 // telemetry sensors ID
@@ -90,8 +91,9 @@ const GhostSensor ghostSensors[] = {
   GS(GHOST_ID_GPS_ALT,         STR_SENSOR_GPSALT,           UNIT_METERS,            0),
   GS(GHOST_ID_GPS_SATS,        STR_SENSOR_SATELLITES,       UNIT_RAW,               0),
 
-  GS(0x00,                     NULL,                  UNIT_RAW,               0),
+  GS(0x00,                     NULL,                        UNIT_RAW,               0),
 };
+// clang-format on
 
 const GhostSensor *getGhostSensor(uint8_t id)
 {
@@ -313,11 +315,7 @@ void processGhostTelemetryFrame(uint8_t module, uint8_t* buffer, uint32_t length
 #if defined(LUA)
     default:
       // destination address and CRC are skipped
-      if (luaInputTelemetryFifo && luaInputTelemetryFifo->hasSpace(length - 2) ) {
-        for (uint8_t i = 1; i < length - 1; i++) {
-          luaInputTelemetryFifo->push(buffer[i]);
-        }
-      }
+      pushTelemetryDataToQueues(buffer + 1, length - 2);
       break;
 #endif
   }

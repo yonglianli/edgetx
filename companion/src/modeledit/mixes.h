@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MIXES_H_
-#define _MIXES_H_
+#pragma once
 
 #include "modeledit.h"
 #include "mixerslistwidget.h"
@@ -83,6 +83,5 @@ class MixesPanel : public ModelPanel
     QString getMixerText(int dest, bool newChannel);
     void connectItemModelEvents(const int id);
     void updateItemModels();
+    QAction * addAct(const QString & icon, const QString & text, const char * slot, const QKeySequence & shortcut = 0, bool enabled = true);
 };
-
-#endif // _MIXES_H_

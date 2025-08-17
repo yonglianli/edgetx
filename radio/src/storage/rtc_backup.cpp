@@ -19,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "edgetx.h"
 #include "rtc_backup.h"
 
 namespace Backup {
@@ -40,6 +40,11 @@ Backup::RamBackupUncompressed ramBackupUncompressed __DMA;
 RamBackup _ramBackup;
 RamBackup * ramBackup = &_ramBackup;
 #else
+
+#if !defined(BKPSRAM_BASE) && defined(D3_BKPSRAM_BASE)
+  #define BKPSRAM_BASE D3_BKPSRAM_BASE
+#endif
+
 RamBackup * ramBackup = (RamBackup *)BKPSRAM_BASE;
 #endif
 

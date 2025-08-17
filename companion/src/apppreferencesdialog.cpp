@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,34 +24,40 @@
 #include "mainwindow.h"
 #include "helpers.h"
 #include "storage.h"
-#if defined(JOYSTICKS)
+#if defined(USE_SDL)
 #include "joystick.h"
 #include "joystickdialog.h"
 #endif
 #include "moduledata.h"
-#include "compounditemmodels.h"
+#include "filtereditemmodels.h"
 #include "updates/updatefactories.h"
 #include "updates/updateoptionsdialog.h"
+#include <QPalette>
+#include <QColorDialog>
 
-#include <QAbstractItemModel>
+constexpr char FIM_TEMPLATESETUP[]    {"Template Setup"};
 
 AppPreferencesDialog::AppPreferencesDialog(QWidget * parent, UpdateFactories * factories) :
   QDialog(parent),
   ui(new Ui::AppPreferencesDialog),
   updateLock(false),
   mainWinHasDirtyChild(false),
-  factories(factories)
+  factories(factories),
+  panelItemModels(nullptr)
 {
   ui->setupUi(this);
   setWindowIcon(CompanionIcon("apppreferences.png"));
   ui->tabWidget->setCurrentIndex(0);
+
+  panelItemModels = new FilteredItemModelFactory();
+  panelItemModels->registerItemModel(new FilteredItemModel(GeneralSettings::templateSetupItemModel()), FIM_TEMPLATESETUP);
 
   initSettings();
   connect(ui->boardCB, SIGNAL(currentIndexChanged(int)), this, SLOT(onBaseFirmwareChanged()));
   connect(ui->opt_appDebugLog, &QCheckBox::toggled, this, &AppPreferencesDialog::toggleAppLogSettings);
   connect(ui->opt_fwTraceLog, &QCheckBox::toggled, this, &AppPreferencesDialog::toggleAppLogSettings);
 
-#if !defined(JOYSTICKS)
+#if !defined(USE_SDL)
   ui->joystickCB->hide();
   ui->joystickCB->setDisabled(true);
   ui->joystickcalButton->hide();
@@ -64,6 +71,7 @@ AppPreferencesDialog::AppPreferencesDialog(QWidget * parent, UpdateFactories * f
 AppPreferencesDialog::~AppPreferencesDialog()
 {
   delete ui;
+  delete panelItemModels;
 }
 
 void AppPreferencesDialog::setMainWinHasDirtyChild(bool value)
@@ -78,12 +86,9 @@ void AppPreferencesDialog::accept()
   g.showSplash(ui->showSplash->isChecked());
   g.sortProfiles(ui->sortProfiles->isChecked());
   g.promptProfile(ui->chkPromptProfile->isChecked());
-  g.simuSW(ui->simuSW->isChecked());
-  g.disableJoystickWarning(ui->joystickWarningCB->isChecked());
   g.removeModelSlots(ui->opt_removeBlankSlots->isChecked());
   g.newModelAction((AppData::NewModelAction)ui->cboNewModelAction->currentIndex());
   g.historySize(ui->historySize->value());
-  g.backLight(ui->backLightColor->currentIndex());
   profile.volumeGain(round(ui->volumeGain->value() * 10.0));
   g.libDir(ui->libraryPath->text());
   g.gePath(ui->ge_lineedit->text());
@@ -94,6 +99,14 @@ void AppPreferencesDialog::accept()
   g.fwTraceLog(ui->opt_fwTraceLog->isChecked());
   g.appLogsDir(ui->appLogsDir->text());
   g.runAppInstaller(ui->chkPromptInstall->isChecked());
+
+//  Simulator tab
+  g.simuSW(ui->simuSW->isChecked());
+  g.backLight(ui->backLightColor->currentIndex());
+  g.simuGenericKeysPos((AppData::SimuGenericKeysPos)ui->cboSimuGenericKeysPos->currentIndex());
+  g.simuScrollButtons(ui->chkSimuScrollButtons->isChecked());
+
+  g.disableJoystickWarning(ui->joystickWarningCB->isChecked());
 
   if (ui->joystickChkB ->isChecked()) {
     g.jsSupport(ui->joystickChkB ->isChecked());
@@ -155,15 +168,15 @@ void AppPreferencesDialog::accept()
 
   profile.defaultInternalModule(ui->defaultInternalModuleCB->currentData().toInt());
   profile.externalModuleSize(ui->externalModuleSizeCB->currentData().toInt());
-  profile.channelOrder(ui->channelorderCB->currentIndex());
-  profile.defaultMode(ui->stickmodeCB->currentIndex());
-  profile.renameFwFiles(ui->renameFirmware->isChecked());
+  profile.channelOrder(ui->channelorderCB->currentData().toInt());
+  profile.defaultMode(ui->stickmodeCB->currentData().toInt());
   profile.burnFirmware(ui->burnFirmware->isChecked());
   profile.sdPath(ui->sdPath->text());
   profile.pBackupDir(ui->profilebackupPath->text());
   profile.penableBackup(ui->pbackupEnable->isChecked());
   profile.splashFile(ui->SplashFileName->text());
   profile.runSDSync(ui->chkPromptSDSync->isChecked());
+  profile.radioSimCaseColor(ui->lblRadioColorSample->palette().button().color());
 
   // The profile name may NEVER be empty
   if (ui->profileNameLE->text().isEmpty())
@@ -219,32 +232,25 @@ void AppPreferencesDialog::on_snapshotPathButton_clicked()
   }
 }
 
+void AppPreferencesDialog::on_btnRadioColor_clicked()
+{
+  Profile & profile = g.currentProfile();
+  QColorDialog *dlg = new QColorDialog(this);
+  QColor color = dlg->getColor(profile.radioSimCaseColor(), this);
+  ui->lblRadioColorSample->setPalette(QPalette(color));
+  ui->lblRadioColorSample->repaint();
+}
+
 void AppPreferencesDialog::initSettings()
 {
   const Profile & profile = g.currentProfile();
 
-  ui->snapshotClipboardCKB->setChecked(g.snapToClpbrd());
   ui->burnFirmware->setChecked(profile.burnFirmware());
-  ui->snapshotPath->setText(g.snapshotDir());
-  ui->snapshotPath->setReadOnly(true);
-  if (ui->snapshotClipboardCKB->isChecked()) {
-    ui->snapshotPath->setDisabled(true);
-    ui->snapshotPathButton->setDisabled(true);
-  }
 
   ui->showSplash->setChecked(g.showSplash());
   ui->sortProfiles->setChecked(g.sortProfiles());
   ui->chkPromptProfile->setChecked(g.promptProfile());
   ui->historySize->setValue(g.historySize());
-  ui->backLightColor->setCurrentIndex(g.backLight());
-  ui->volumeGain->setValue(profile.volumeGain() / 10.0);
-
-  if (IS_HORUS_OR_TARANIS(getCurrentBoard())) {
-    ui->backLightColor->setEnabled(false);
-  }
-
-  ui->simuSW->setChecked(g.simuSW());
-  ui->joystickWarningCB->setChecked(g.disableJoystickWarning());
   ui->opt_removeBlankSlots->setChecked(g.removeModelSlots());
   ui->cboNewModelAction->addItems(AppData::newModelActionsList());
   ui->cboNewModelAction->setCurrentIndex(g.newModelAction());
@@ -272,7 +278,25 @@ void AppPreferencesDialog::initSettings()
   toggleAppLogSettings();
   ui->chkPromptInstall->setChecked(g.runAppInstaller());
 
-#if defined(JOYSTICKS)
+  //  Simulator tab
+  ui->snapshotPath->setText(g.snapshotDir());
+  ui->snapshotPath->setReadOnly(true);
+  ui->snapshotClipboardCKB->setChecked(g.snapToClpbrd());
+  if (ui->snapshotClipboardCKB->isChecked()) {
+    ui->snapshotPath->setDisabled(true);
+    ui->snapshotPathButton->setDisabled(true);
+  }
+  ui->simuSW->setChecked(g.simuSW());
+  ui->backLightColor->setCurrentIndex(g.backLight());
+  if (!Boards::getCapability(getCurrentBoard(), Board::HasBacklightColor))
+    ui->backLightColor->setEnabled(false);
+  ui->volumeGain->setValue(profile.volumeGain() / 10.0);
+  ui->cboSimuGenericKeysPos->addItems(AppData::simuGenericKeysPosList());
+  ui->cboSimuGenericKeysPos->setCurrentIndex(g.simuGenericKeysPos());
+  ui->chkSimuScrollButtons->setChecked(g.simuScrollButtons());
+  ui->joystickWarningCB->setChecked(g.disableJoystickWarning());
+
+#if defined(USE_SDL)
   ui->joystickChkB->setChecked(g.jsSupport());
   if (ui->joystickChkB->isChecked()) {
     QStringList joystickNames;
@@ -305,9 +329,12 @@ void AppPreferencesDialog::initSettings()
   ui->defaultInternalModuleCB->setCurrentIndex(ui->defaultInternalModuleCB->findData(profile.defaultInternalModule()));
   ui->externalModuleSizeCB->setModel(Boards::externalModuleSizeItemModel());
   ui->externalModuleSizeCB->setCurrentIndex(ui->externalModuleSizeCB->findData(profile.externalModuleSize()));
-  ui->channelorderCB->setCurrentIndex(profile.channelOrder());
-  ui->stickmodeCB->setCurrentIndex(profile.defaultMode());
-  ui->renameFirmware->setChecked(profile.renameFwFiles());
+  panelItemModels->getItemModel(FIM_TEMPLATESETUP)->setFilterFlags(Boards::isAir() ? GeneralSettings::RadioTypeContextAir :
+                                                                                     GeneralSettings::RadioTypeContextSurface);
+  ui->channelorderCB->setModel(panelItemModels->getItemModel(FIM_TEMPLATESETUP));
+  ui->channelorderCB->setCurrentIndex(ui->channelorderCB->findData(profile.channelOrder()));
+  ui->stickmodeCB->setModel(GeneralSettings::stickModeItemModel());
+  ui->stickmodeCB->setCurrentIndex(ui->stickmodeCB->findData(profile.defaultMode()));
   ui->sdPath->setText(profile.sdPath());
   if (!profile.pBackupDir().isEmpty()) {
     if (QDir(profile.pBackupDir()).exists()) {
@@ -320,6 +347,11 @@ void AppPreferencesDialog::initSettings()
   }
   else {
       ui->pbackupEnable->setDisabled(true);
+  }
+
+  if (Boards::isSurface()) {
+    ui->stickmodeLabel->hide();
+    ui->stickmodeCB->hide();
   }
 
   ui->profileNameLE->setText(profile.name());
@@ -337,6 +369,7 @@ void AppPreferencesDialog::initSettings()
   }
   ui->lblGeneralSettings->setText(hwSettings);
   ui->chkPromptSDSync->setChecked(profile.runSDSync());
+  ui->lblRadioColorSample->setPalette(QPalette(profile.radioSimCaseColor()));
 
   QString currType = QStringList(profile.fwType().split('-').mid(0, 2)).join('-');
   foreach(Firmware * firmware, Firmware::getRegisteredFirmwares()) {
@@ -417,8 +450,8 @@ void AppPreferencesDialog::initSettings()
     }
   });
 
-  connect(ui->chkDelDecompress, &QCheckBox::stateChanged, [=](const int checked) {
-    if (!checked) {
+  connect(ui->chkDelDecompress, &QCheckBox::checkStateChanged, [=](const int checked) {
+      if (!checked) {
       if (ui->chkDecompressDirUseDwnld->isChecked()) {
         ui->chkDelDownloads->setEnabled(false);
         ui->chkDelDownloads->setChecked(false);
@@ -460,6 +493,7 @@ void AppPreferencesDialog::initSettings()
     grid->addWidget(lblName[i], row, col++);
 
     chkCheckForUpdate[i] = new QCheckBox();
+    chkCheckForUpdate[i]->setStyleSheet("spacing: 10px"); // workaround Qt 6.9.0 Qt::AlignHCenter causes text to overlap checkbox rhs
     grid->addWidget(chkCheckForUpdate[i], row, col++);
     grid->setAlignment(chkCheckForUpdate[i], Qt::AlignHCenter);
 
@@ -593,7 +627,7 @@ void AppPreferencesDialog::on_btnClearPos_clicked()
   g.profile[g.sessionId()].simulatorOptions(opts);
 }
 
-#if defined(JOYSTICKS)
+#if defined(USE_SDL)
 void AppPreferencesDialog::on_joystickChkB_clicked() {
   if (ui->joystickChkB->isChecked()) {
     QStringList joystickNames;
@@ -650,7 +684,8 @@ bool AppPreferencesDialog::displayImage(const QString & fileName)
     return false;
 
   ui->imageLabel->setPixmap(makePixMap(image));
-  ui->imageLabel->setFixedSize(getCurrentFirmware()->getCapability(LcdWidth), getCurrentFirmware()->getCapability(LcdHeight));
+  ui->imageLabel->setFixedSize(Boards::getCapability(getCurrentBoard(), Board::LcdWidth),
+                               Boards::getCapability(getCurrentBoard(), Board::LcdHeight));
   return true;
 }
 
@@ -691,6 +726,19 @@ void AppPreferencesDialog::onBaseFirmwareChanged()
   profile.externalModuleSize(Boards::getDefaultExternalModuleSize(newfw->getBoard()));
   ui->externalModuleSizeCB->setModel(Boards::externalModuleSizeItemModel());
   ui->externalModuleSizeCB->setCurrentIndex(ui->externalModuleSizeCB->findData(profile.externalModuleSize()));
+
+  if (Boards::isSurface()) {
+    profile.defaultMode(1);
+    ui->stickmodeLabel->hide();
+    ui->stickmodeCB->hide();
+    profile.channelOrder(0);
+  }
+
+  ui->stickmodeCB->setCurrentIndex(ui->stickmodeCB->findData(profile.defaultMode()));
+  panelItemModels->getItemModel(FIM_TEMPLATESETUP)->setFilterFlags(Boards::isAir() ? GeneralSettings::RadioTypeContextAir :
+                                                                                     GeneralSettings::RadioTypeContextSurface);
+  ui->channelorderCB->setCurrentIndex(ui->channelorderCB->findData(profile.channelOrder()));
+
 }
 
 Firmware *AppPreferencesDialog::getBaseFirmware() const

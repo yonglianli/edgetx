@@ -25,13 +25,8 @@
 #include "hal/fatfs_diskio.h"
 #include "hal/storage.h"
 
-#include "opentx.h"
-
-#if defined(LIBOPENUI)
-  #include "libopenui.h"
-#else
-  #include "libopenui/src/libopenui_file.h"
-#endif
+#include "edgetx.h"
+#include "lib_file.h"
 
 #if FF_MAX_SS != FF_MIN_SS
 #error "Variable sector size is not supported"
@@ -39,7 +34,11 @@
 
 #define BLOCK_SIZE FF_MAX_SS
 
+#if defined(SPI_FLASH)
+#define SDCARD_MIN_FREE_SPACE_MB 2 // Maintain 2MB free space buffer to prevent crashes
+#else
 #define SDCARD_MIN_FREE_SPACE_MB 50 // Maintain a 50MB free space buffer to prevent crashes
+#endif
 
 const char * sdCheckAndCreateDirectory(const char * path)
 {
@@ -344,7 +343,6 @@ bool sdListFiles(const char * path, const char * extension, const uint8_t maxlen
 
 #endif // !LIBOPENUI
 
-#if defined(SDCARD)
 const char * sdCopyFile(const char * srcPath, const char * destPath)
 {
   FIL srcFile;
@@ -401,7 +399,7 @@ const char * sdMoveFile(const char * srcPath, const char * destPath)
 {
   const char *result;
   result = sdCopyFile(srcPath, destPath);
-  if(result != 0) {
+  if(result != nullptr) {
     return result;
   }
 
@@ -417,7 +415,7 @@ const char * sdMoveFile(const char * srcFilename, const char * srcDir, const cha
 {
   const char *result;
   result = sdCopyFile(srcFilename, srcDir, destFilename, destDir);
-  if(result != 0) {
+  if(result != nullptr) {
     return result;
   }
 
@@ -431,9 +429,6 @@ const char * sdMoveFile(const char * srcFilename, const char * srcDir, const cha
   }
   return nullptr;
 }
-
-#endif // defined(SDCARD)
-
 
 #if !defined(SIMU) || defined(SIMU_DISKIO)
 uint32_t sdGetNoSectors()
@@ -565,7 +560,7 @@ void sdDone()
 
 uint32_t sdMounted()
 {
-#if defined(SIMU)
+#if defined(SIMU) && !defined(SIMU_DISKIO)
   return true;
 #else
   return _g_FATFS_init && (g_FATFS_Obj.fs_type != 0);

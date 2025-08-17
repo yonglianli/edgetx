@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef SIMULATEDUIWIDGET_H
-#define SIMULATEDUIWIDGET_H
+#pragma once
 
 #include "boards.h"
 #include "constants.h"
@@ -34,6 +34,55 @@ class SimulatorInterface;
 class LcdWidget;
 class RadioKeyWidget;
 class RadioUiAction;
+class ButtonsWidget;
+class QPushButton;
+
+// Match with /radio/src/hal/key_driver.h
+// key in sync with strKeyToInt
+enum EnumKeys {
+  KEY_MENU,
+  KEY_EXIT,
+  KEY_ENTER,
+
+  KEY_PAGEUP,
+  KEY_PAGEDN,
+
+  KEY_UP,
+  KEY_DOWN,
+
+  KEY_LEFT,
+  KEY_RIGHT,
+
+  KEY_PLUS,
+  KEY_MINUS,
+
+  KEY_MODEL,
+  KEY_TELE,
+  KEY_SYS,
+
+  KEY_SHIFT,
+  KEY_BIND,
+
+  //  these are only used by the simulator
+  KEY_SCRLUP,
+  KEY_SCRLDN
+};
+
+struct RadioKeyDefinition {
+  int index = 0;
+  QChar side = 'L';
+  int gridRow = 0;
+  QList<int> keys = QList<int>();
+  QString helpKeys = "";
+  QString helpActions = "";
+
+  RadioKeyDefinition(int index, QChar side, int gridRow,
+                     QList<int> keys, QString helpKeys, QString helpActions) :
+                     index(index), side(side), gridRow(gridRow),
+                     keys(keys), helpKeys(helpKeys), helpActions(helpActions) {}
+
+  RadioKeyDefinition() = default;
+};
 
 /*
  * This is a base class for the main hardware-specific radio user interface, including LCD screen and navigation buttons/widgets.
@@ -68,11 +117,14 @@ class SimulatedUIWidget : public QWidget
     void mousePressEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
 
+    virtual void shrink() { };
+
   signals:
 
     void controlValueChange(RadioWidget::RadioWidgetType type, int index, int value);
     void customStyleRequest(const QString & style);
     void simulatorWheelEvent(qint8 steps);
+    void resizeRequest();
 
   protected slots:
 
@@ -97,327 +149,13 @@ class SimulatedUIWidget : public QWidget
     unsigned int m_backLight;
     int m_beepShow;
     int m_beepVal;
+
+    static int strKeyToInt(std::string key);
+
+    void addPushButton(int index, QString label, ButtonsWidget * leftButtons, QGridLayout * leftButtonsGrid,
+                       ButtonsWidget * rightButtons, QGridLayout * rightButtonsGrid);
+    void addPushButtons(ButtonsWidget * leftButtons, ButtonsWidget * rightButtons);
+    void addScrollActions();
+    void addMouseActions();
+    const RadioKeyDefinition * getRadioKeyDefinition(const int key) const;
 };
-
-
-// Each subclass is responsible for its own Ui
-namespace Ui {
-  class SimulatedUIWidget9X;
-  class SimulatedUIWidgetX9LITE;
-  class SimulatedUIWidgetX7;
-  class SimulatedUIWidgetX9;
-  class SimulatedUIWidgetXLITE;
-  class SimulatedUIWidgetX9E;
-  class SimulatedUIWidgetX9D2019;
-  class SimulatedUIWidgetX10;
-  class SimulatedUIWidgetX12;
-  class SimulatedUIWidgetLR3PRO;
-  class SimulatedUIWidgetCommando8;
-  class SimulatedUIWidgetJumperT12;
-  class SimulatedUIWidgetJumperTLITE;
-  class SimulatedUIWidgetJumperTPRO;
-  class SimulatedUIWidgetJumperT16;
-  class SimulatedUIWidgetJumperT18;
-  class SimulatedUIWidgetTX16S;
-  class SimulatedUIWidgetTX12;
-  class SimulatedUIWidgetZorro;
-  class SimulatedUIWidgetBoxer;
-  class SimulatedUIWidgetT8;
-  class SimulatedUIWidgetNV14;
-  class SimulatedUIWidgetEL18;
-  class SimulatedUIWidgetPL18;
-}
-
-class SimulatedUIWidget9X: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidget9X(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidget9X();
-
-  protected:
-    void setLightOn(bool enable);
-
-  private:
-    Ui::SimulatedUIWidget9X * ui;
-
-};
-
-class SimulatedUIWidgetX9LITE: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX9LITE(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX9LITE();
-
-  private:
-    Ui::SimulatedUIWidgetX9LITE * ui;
-};
-
-class SimulatedUIWidgetX7: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX7(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX7();
-
-  private:
-    Ui::SimulatedUIWidgetX7 * ui;
-};
-
-class SimulatedUIWidgetX9: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX9(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX9();
-
-  private:
-    Ui::SimulatedUIWidgetX9 * ui;
-};
-
-class SimulatedUIWidgetXLITE: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetXLITE(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetXLITE();
-
-  private:
-    Ui::SimulatedUIWidgetXLITE * ui;
-};
-
-class SimulatedUIWidgetX9E: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX9E(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX9E();
-
-  private:
-    Ui::SimulatedUIWidgetX9E * ui;
-};
-
-class SimulatedUIWidgetX9D2019: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX9D2019(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX9D2019();
-
-  private:
-    Ui::SimulatedUIWidgetX9D2019 * ui;
-};
-
-class SimulatedUIWidgetX10: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX10(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX10();
-
-  private:
-    Ui::SimulatedUIWidgetX10 * ui;
-};
-
-class SimulatedUIWidgetX12: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetX12(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetX12();
-
-  private:
-    Ui::SimulatedUIWidgetX12 * ui;
-};
-
-class SimulatedUIWidgetLR3PRO: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetLR3PRO(SimulatorInterface * simulator, QWidget * parent = NULL);
-    virtual ~SimulatedUIWidgetLR3PRO();
-
-  private:
-    Ui::SimulatedUIWidgetLR3PRO * ui;
-};
-
-class SimulatedUIWidgetCommando8: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetCommando8(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetCommando8();
-
-  private:
-    Ui::SimulatedUIWidgetCommando8 * ui;
-};
-
-class SimulatedUIWidgetJumperT12: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetJumperT12(SimulatorInterface * simulator, QWidget * parent = NULL);
-    virtual ~SimulatedUIWidgetJumperT12();
-
-  private:
-    Ui::SimulatedUIWidgetJumperT12 * ui;
-};
-
-class SimulatedUIWidgetJumperTLITE: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetJumperTLITE(SimulatorInterface * simulator, QWidget * parent = NULL);
-    virtual ~SimulatedUIWidgetJumperTLITE();
-
-  private:
-    Ui::SimulatedUIWidgetJumperTLITE * ui;
-};
-
-class SimulatedUIWidgetJumperTPRO: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetJumperTPRO(SimulatorInterface * simulator, QWidget * parent = NULL);
-    virtual ~SimulatedUIWidgetJumperTPRO();
-
-  private:
-    Ui::SimulatedUIWidgetJumperTPRO * ui;
-};
-
-class SimulatedUIWidgetJumperT16: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetJumperT16(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetJumperT16();
-
-  private:
-    Ui::SimulatedUIWidgetJumperT16 * ui;
-};
-
-class SimulatedUIWidgetJumperT18: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetJumperT18(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetJumperT18();
-
-  private:
-    Ui::SimulatedUIWidgetJumperT18 * ui;
-};
-
-class SimulatedUIWidgetTX12: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetTX12(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetTX12();
-
-  private:
-    Ui::SimulatedUIWidgetTX12 * ui;
-};
-
-class SimulatedUIWidgetZorro: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetZorro(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetZorro();
-
-  private:
-    Ui::SimulatedUIWidgetZorro * ui;
-};
-
-class SimulatedUIWidgetBoxer: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetBoxer(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetBoxer();
-
-  private:
-    Ui::SimulatedUIWidgetBoxer * ui;
-};
-
-class SimulatedUIWidgetT8: public SimulatedUIWidget
-{
-Q_OBJECT
-
-public:
-  explicit SimulatedUIWidgetT8(SimulatorInterface * simulator, QWidget * parent = nullptr);
-  virtual ~SimulatedUIWidgetT8();
-
-private:
-  Ui::SimulatedUIWidgetT8 * ui;
-};
-
-class SimulatedUIWidgetTX16S: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetTX16S(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetTX16S();
-
-  private:
-    Ui::SimulatedUIWidgetTX16S * ui;
-};
-
-class SimulatedUIWidgetNV14: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetNV14(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetNV14();
-
-  private:
-    Ui::SimulatedUIWidgetNV14 * ui;
-};
-
-class SimulatedUIWidgetEL18: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetEL18(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetEL18();
-
-  private:
-    Ui::SimulatedUIWidgetEL18 * ui;
-};
-
-class SimulatedUIWidgetPL18: public SimulatedUIWidget
-{
-  Q_OBJECT
-
-  public:
-    explicit SimulatedUIWidgetPL18(SimulatorInterface * simulator, QWidget * parent = nullptr);
-    virtual ~SimulatedUIWidgetPL18();
-
-  private:
-    Ui::SimulatedUIWidgetPL18 * ui;
-};
-
-#endif // SIMULATEDUIWIDGET_H

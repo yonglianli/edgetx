@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -22,156 +23,16 @@
 
 #include "modeledit.h"
 #include "eeprominterface.h"
-#include "compounditemmodels.h"
 #include "filtereditemmodels.h"
-
-constexpr char MIMETYPE_TIMER[] = "application/x-companion-timer";
+#include "setup_timer.h"
+#include "setup_module.h"
+#include "setup_function_switches.h"
 
 namespace Ui {
   class Setup;
-  class Timer;
-  class Module;
-  class FunctionSwitches;
 }
 
 class AutoLineEdit;
-class FilteredItemModel;
-
-class TimerPanel : public ModelPanel
-{
-    Q_OBJECT
-
-  public:
-    TimerPanel(QWidget * parent, ModelData & model, TimerData & timer, GeneralSettings & generalSettings, Firmware * firmware,
-               QWidget * prevFocus, FilteredItemModelFactory * panelFilteredModels, CompoundItemModelFactory * panelItemModels);
-    virtual ~TimerPanel();
-
-    virtual void update();
-    QWidget * getLastFocus();
-
-  private slots:
-    void onNameChanged();
-    void onItemModelAboutToBeUpdated();
-    void onItemModelUpdateComplete();
-    void onCountdownBeepChanged(int index);
-    void onModeChanged(int index);
-
-  signals:
-    void nameChanged();
-    void modeChanged();
-
-  private:
-    TimerData & timer;
-    Ui::Timer * ui;
-    void connectItemModelEvents(const FilteredItemModel * itemModel);
-    int modelsUpdateCnt;
-};
-
-class ModulePanel : public ModelPanel
-{
-  Q_OBJECT
-
-  public:
-    ModulePanel(QWidget * parent, ModelData & model, ModuleData & module, GeneralSettings & generalSettings, Firmware * firmware, int moduleIdx,
-                FilteredItemModelFactory * panelFilteredItemModels = nullptr);
-    virtual ~ModulePanel();
-    virtual void update();
-
-  public slots:
-    void onExtendedLimitsToggled();
-    void onFailsafeModified(unsigned index);
-    void updateTrainerModeItemModel();
-
-  signals:
-    void channelsRangeChanged();
-    void failsafeModified(unsigned index);
-    void updateItemModels();
-    void protocolChanged();
-
-  private slots:
-    void setupFailsafes();
-    void onProtocolChanged(int index);
-    void on_ppmDelay_editingFinished();
-    void on_channelsCount_editingFinished();
-    void on_channelsStart_editingFinished();
-    void on_ppmPolarity_currentIndexChanged(int index);
-    void on_ppmOutputType_currentIndexChanged(int index);
-    void on_ppmFrameLength_editingFinished();
-    void on_rxNumber_editingFinished();
-    void on_failsafeMode_currentIndexChanged(int value);
-    void onMultiProtocolChanged(int index);
-    void onSubTypeChanged();
-    void on_autoBind_stateChanged(int state);
-    void on_disableChMap_stateChanged(int state);
-    void on_raw12bits_stateChanged(int state);
-    void on_racingMode_stateChanged(int state);
-    void on_disableTelem_stateChanged(int state);
-    void on_lowPower_stateChanged(int state);
-    void on_r9mPower_currentIndexChanged(int index);
-    void setChannelFailsafeValue(const int channel, const int value, quint8 updtSb = 0);
-    void onFailsafeComboIndexChanged(int index);
-    void onFailsafeUsecChanged(int value);
-    void onFailsafePercentChanged(double value);
-    void onFailsafesDisplayValueTypeChanged(int type);
-    void onRfFreqChanged(int freq);
-    void updateFailsafe(unsigned channel);
-    void on_optionValue_valueChanged(int value);
-    void onClearAccessRxClicked();
-    void on_chkOption_stateChanged(int state);
-    void on_cboOption_currentIndexChanged(int value);
-
-  private:
-    enum FailsafeValueDisplayTypes { FAILSAFE_DISPLAY_PERCENT = 1, FAILSAFE_DISPLAY_USEC = 2 };
-
-    struct ChannelFailsafeWidgetsGroup {
-        QLabel * label;
-        QComboBox * combo;
-        QSpinBox * sbUsec;
-        QDoubleSpinBox * sbPercent;
-    };
-
-    ModuleData & module;
-    int moduleIdx;
-    Ui::Module *ui;
-    QMap<int, ChannelFailsafeWidgetsGroup> failsafeGroupsMap;
-    static quint8 failsafesValueDisplayType;  // FailsafeValueDisplayTypes
-    void updateFailsafeUI(unsigned channel, quint8 updtSb);
-    FilteredItemModel *trainerModeItemModel;
-    static bool isTrainerModule(int index) { return index < 0; }
-    static bool isInternalModule(int index) { return index == 0; }
-    static bool isExternalModule(int index) { return index > 0; }
-};
-
-class FunctionSwitchesPanel : public ModelPanel
-{
-    Q_OBJECT
-
-  public:
-    FunctionSwitchesPanel(QWidget * parent, ModelData & model, GeneralSettings & generalSettings, Firmware * firmware);
-    virtual ~FunctionSwitchesPanel();
-
-    virtual void update();
-    void update(int index);
-
-  signals:
-    void updateDataModels();
-
-  private slots:
-    void on_nameEditingFinished();
-    void on_configCurrentIndexChanged(int index);
-    void on_startPosnCurrentIndexChanged(int index);
-    void on_groupChanged(int value);
-    void on_alwaysOnGroupChanged(int value);
-
-  private:
-    Ui::FunctionSwitches * ui;
-    QVector<AutoLineEdit *> aleNames;
-    QVector<QComboBox *> cboConfigs;
-    QVector<QComboBox *> cboStartupPosns;
-    QVector<QSpinBox *> sbGroups;
-    QVector<QCheckBox *> cbAlwaysOnGroups;
-    int switchcnt;
-};
 
 class SetupPanel : public ModelPanel
 {
@@ -186,6 +47,7 @@ class SetupPanel : public ModelPanel
   signals:
     void extendedLimitsToggled();
     void updated();
+    void throttleReverseChanged();
 
   private slots:
     void on_name_editingFinished();
@@ -227,6 +89,7 @@ class SetupPanel : public ModelPanel
 
   private:
     Ui::Setup *ui;
+    QVector<QLabel *> startupSwitchesLabels;
     QVector<QSlider *> startupSwitchesSliders;
     QVector<QCheckBox *> startupSwitchesCheckboxes;
     QVector<QCheckBox *> potWarningCheckboxes;
@@ -235,6 +98,7 @@ class SetupPanel : public ModelPanel
     TimerPanel * timers[CPN_MAX_TIMERS];
     FunctionSwitchesPanel * funcswitches;
 
+    bool canSwitchHaveWarning(int sw);
     void updateStartupSwitches();
     void updatePotWarnings();
     void updateBeepCenter();

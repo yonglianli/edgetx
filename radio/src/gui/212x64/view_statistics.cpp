@@ -20,8 +20,10 @@
  */
 
 #include "hal/adc_driver.h"
-#include "opentx.h"
+#include "edgetx.h"
+
 #include "tasks.h"
+#include "tasks/mixer_task.h"
 
 #define STATS_1ST_COLUMN               FW/2
 #define STATS_2ND_COLUMN               12*FW+FW/2
@@ -33,14 +35,13 @@ void menuStatisticsView(event_t event)
   title(STR_MENUSTAT);
 
   switch(event) {
-    case EVT_KEY_FIRST(KEY_PLUS):
-    case EVT_KEY_BREAK(KEY_PAGE):
+    case EVT_KEY_BREAK(KEY_PLUS):
+    case EVT_KEY_BREAK(KEY_PAGEDN):
       chainMenu(menuStatisticsDebug);
       break;
 
-    case EVT_KEY_FIRST(KEY_MINUS):
-    case EVT_KEY_LONG(KEY_PAGE):
-      killEvents(event);
+    case EVT_KEY_BREAK(KEY_MINUS):
+    case EVT_KEY_BREAK(KEY_PAGEUP):
 #if defined(DEBUG_TRACE_BUFFER)
       chainMenu(menuTraceBuffer);
 #else
@@ -50,12 +51,13 @@ void menuStatisticsView(event_t event)
 
     case EVT_KEY_LONG(KEY_MENU):  // historical
     case EVT_KEY_LONG(KEY_ENTER):
+      killEvents(event);
       g_eeGeneral.globalTimer = 0;
       storageDirty(EE_GENERAL);
       sessionTimer = 0;
       break;
 
-    case EVT_KEY_FIRST(KEY_EXIT):
+    case EVT_KEY_BREAK(KEY_EXIT):
       chainMenu(menuMainView);
       break;
   }
@@ -120,13 +122,13 @@ void menuStatisticsDebug(event_t event)
 
   switch (event) {
     case EVT_KEY_LONG(KEY_ENTER):
+      killEvents(event);
       g_eeGeneral.globalTimer = 0;
       sessionTimer = 0;
       storageDirty(EE_GENERAL);
-      killEvents(event);
       break;
 
-    case EVT_KEY_FIRST(KEY_ENTER):
+    case EVT_KEY_BREAK(KEY_ENTER):
 #if defined(LUA)
       maxLuaInterval = 0;
       maxLuaDuration = 0;
@@ -134,20 +136,19 @@ void menuStatisticsDebug(event_t event)
       maxMixerDuration  = 0;
       break;
 
-    case EVT_KEY_FIRST(KEY_PLUS):
-    case EVT_KEY_BREAK(KEY_PAGE):
+    case EVT_KEY_BREAK(KEY_PLUS):
+    case EVT_KEY_BREAK(KEY_PAGEDN):
       disableVBatBridge();
       chainMenu(menuStatisticsDebug2);
       break;
 
-    case EVT_KEY_FIRST(KEY_MINUS):
-    case EVT_KEY_LONG(KEY_PAGE):
-      killEvents(event);
+    case EVT_KEY_BREAK(KEY_MINUS):
+    case EVT_KEY_BREAK(KEY_PAGEUP):
       disableVBatBridge();
       chainMenu(menuStatisticsView);
       break;
 
-    case EVT_KEY_FIRST(KEY_EXIT):
+    case EVT_KEY_BREAK(KEY_EXIT):
       disableVBatBridge();
       chainMenu(menuMainView);
       break;
@@ -155,6 +156,7 @@ void menuStatisticsDebug(event_t event)
 #if defined(WATCHDOG_TEST)
     case EVT_KEY_LONG(KEY_MENU):
       {
+        killEvents(event);
         POPUP_CONFIRMATION("Test the watchdog?", nullptr);
         const char * w = "The radio will reset!";
         SET_WARNING_INFO(w, strlen(w), 0);
@@ -188,13 +190,13 @@ void menuStatisticsDebug(event_t event)
 
   lcdDrawTextAlignedLeft(y, STR_FREE_STACK);
   lcdDrawText(MENU_DEBUG_COL1_OFS, y+1, "[M]", SMLSIZE);
-  lcdDrawNumber(lcdLastRightPos, y, menusStack.available(), LEFT);
+  lcdDrawNumber(lcdLastRightPos, y, task_get_stack_usage(&menusTaskId), LEFT);
   lcdDrawText(lcdLastRightPos+2, y+1, "[X]", SMLSIZE);
-  lcdDrawNumber(lcdLastRightPos, y, mixerStack.available(), LEFT);
+  lcdDrawNumber(lcdLastRightPos, y, task_get_stack_usage(&mixerTaskId), LEFT);
+#if defined(AUDIO)
   lcdDrawText(lcdLastRightPos+2, y+1, "[A]", SMLSIZE);
-  lcdDrawNumber(lcdLastRightPos, y, audioStack.available(), LEFT);
-  lcdDrawText(lcdLastRightPos+2, y+1, "[I]", SMLSIZE);
-  lcdDrawNumber(lcdLastRightPos, y, mainStackAvailable(), LEFT);
+  lcdDrawNumber(lcdLastRightPos, y, task_get_stack_usage(&audioTaskId), LEFT);
+#endif
   y += FH;
 
 #if defined(DEBUG_LATENCY)
@@ -215,8 +217,8 @@ void menuStatisticsDebug2(event_t event)
   title(STR_MENUDEBUG);
 
   switch(event) {
-    case EVT_KEY_FIRST(KEY_PLUS):
-    case EVT_KEY_BREAK(KEY_PAGE):
+    case EVT_KEY_BREAK(KEY_PLUS):
+    case EVT_KEY_BREAK(KEY_PAGEDN):
 #if defined(DEBUG_TRACE_BUFFER)
       chainMenu(menuTraceBuffer);
 #else
@@ -224,25 +226,19 @@ void menuStatisticsDebug2(event_t event)
 #endif
       return;
 
-    case EVT_KEY_FIRST(KEY_MINUS):
-    case EVT_KEY_LONG(KEY_PAGE):
-      killEvents(event);
+    case EVT_KEY_BREAK(KEY_MINUS):
+    case EVT_KEY_BREAK(KEY_PAGEUP):
       chainMenu(menuStatisticsDebug);
       break;
 
-    case EVT_KEY_FIRST(KEY_EXIT):
+    case EVT_KEY_BREAK(KEY_EXIT):
       chainMenu(menuMainView);
       break;
-
-    // case EVT_KEY_LONG(KEY_ENTER):
-    //   telemetryErrors = 0;
-    //   break;
   }
 
   // UART statistics
   // lcdDrawTextAlignedLeft(MENU_DEBUG_ROW1, "Tlm RX Err");
   // lcdDrawNumber(MENU_DEBUG_COL1_OFS, MENU_DEBUG_ROW1, telemetryErrors, RIGHT);
-
 
   lcdDrawText(LCD_W/2, 7*FH+1, STR_MENUTORESET, CENTERED);
   lcdInvertLastLine();
@@ -254,18 +250,17 @@ void menuTraceBuffer(event_t event)
   switch(event)
   {
     case EVT_KEY_LONG(KEY_ENTER):
-      dumpTraceBuffer();
       killEvents(event);
+      dumpTraceBuffer();
       break;
 
-    case EVT_KEY_FIRST(KEY_MINUS):
-    case EVT_KEY_LONG(KEY_PAGE):
-      killEvents(event);
+    case EVT_KEY_BREAK(KEY_MINUS):
+    case EVT_KEY_BREAK(KEY_PAGEUP):
       chainMenu(menuStatisticsDebug2);
       break;
 
-    case EVT_KEY_FIRST(KEY_PLUS):
-    case EVT_KEY_BREAK(KEY_PAGE):
+    case EVT_KEY_BREAK(KEY_PLUS):
+    case EVT_KEY_BREAK(KEY_PAGEDN):
       chainMenu(menuStatisticsView);
       return;
   }

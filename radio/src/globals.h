@@ -19,12 +19,11 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _GLOBALS_H_
-#define _GLOBALS_H_
+#pragma once
 
 #include "definitions.h"
 #include "dataconstants.h"
-#include "opentx_types.h"
+#include "edgetx_types.h"
 
 PACK(struct GlobalData {
   uint8_t externalAntennaEnabled:1;
@@ -50,7 +49,10 @@ extern uint8_t trimsDisplayTimer;
 extern uint8_t trimsDisplayMask;
 extern uint32_t maxMixerDuration;
 
+#if defined(AUDIO)
 extern uint8_t requiredSpeakerVolume;
+#endif
+
 extern uint8_t requiredBacklightBright;
 
 enum MainRequest {
@@ -94,5 +96,3 @@ extern uint8_t beepAgain;
 extern uint16_t lightOffCounter;
 extern uint8_t flashCounter;
 extern uint8_t mixWarning;
-
-#endif

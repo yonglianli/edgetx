@@ -23,16 +23,16 @@
 
 #include <ctype.h>
 #include <stdio.h>
-#include "opentx.h"
+#include "edgetx.h"
 #include "lua_api.h"
 #include "../timers.h"
 #include "model_init.h"
 #include "gvars.h"
 #include "mixes.h"
 
-#if defined(SDCARD_YAML)
+#include "lua_states.h"
+
 #include <storage/sdcard_yaml.h>
-#endif
 
 #if defined(MULTIMODULE)
 #include "pulses/multi.h"
@@ -97,15 +97,12 @@ static int luaModelSetInfo(lua_State *L)
     if (!strcmp(key, "name")) {
       const char * name = luaL_checkstring(L, -1);
       strncpy(g_model.header.name, name, sizeof(g_model.header.name));
-#if defined(EEPROM)
-      memcpy(modelHeaders[g_eeGeneral.currModel].name, g_model.header.name, sizeof(g_model.header.name));
-#endif
     }
     else if (!strcmp(key, "extendedLimits")) {
       g_model.extendedLimits = lua_toboolean(L, -1);
     }
     else if (!strcmp(key, "jitterFilter")) {
-      auto j = lua_tounsigned(L, -1);
+      auto j = lua_tointeger(L, -1);
       if (j > OVERRIDE_ON) j = OVERRIDE_ON;
       g_model.jitterFilter = j;
     }
@@ -167,7 +164,7 @@ Get RF module parameters
 */
 static int luaModelGetModule(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < NUM_MODULES) {
     ModuleData & module = g_model.moduleData[idx];
     lua_newtable(L);
@@ -216,7 +213,7 @@ that parameter remains unchanged.
 */
 static int luaModelSetModule(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
 
   if (idx < NUM_MODULES) {
     int protocol = -1;
@@ -238,9 +235,6 @@ static int luaModelSetModule(lua_State *L)
       }
       else if (!strcmp(key, "modelId")) {
         g_model.header.modelId[idx] = luaL_checkinteger(L, -1);
-#if defined(EEPROM)
-        modelHeaders[g_eeGeneral.currModel].modelId[idx] = g_model.header.modelId[idx];
-#endif
       }
       else if (!strcmp(key, "firstChannel")) {
         module.channelsStart = luaL_checkinteger(L, -1);
@@ -291,7 +285,7 @@ Get model timer parameters
 */
 static int luaModelGetTimer(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_TIMERS) {
     TimerData & timer = g_model.timers[idx];
     lua_newtable(L);
@@ -329,7 +323,7 @@ that parameter remains unchanged.
 */
 static int luaModelSetTimer(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
 
   if (idx < MAX_TIMERS) {
     TimerData & timer = g_model.timers[idx];
@@ -388,7 +382,7 @@ Reset model timer to a startup value
 */
 static int luaModelResetTimer(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_TIMERS) {
     timerReset(idx);
   }
@@ -435,7 +429,7 @@ Return number of lines for given input
 */
 static int luaModelGetInputsCount(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
+  unsigned int chn = luaL_checkinteger(L, 1);
   int count = getInputsCount(chn);
   lua_pushinteger(L, count);
   return 1;
@@ -479,7 +473,7 @@ Return input data for given input and line number
 */
 static int luaModelGetFlightMode(lua_State * L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_FLIGHT_MODES) {
     FlightModeData * fm = flightModeAddress(idx);
     lua_newtable(L);
@@ -523,7 +517,7 @@ Set Flight mode parameters
 */
 static int luaModelSetFlightMode(lua_State * L)
 {
-  unsigned int flightMode = luaL_checkunsigned(L, 1);
+  unsigned int flightMode = luaL_checkinteger(L, 1);
 
   if (flightMode >= MAX_FLIGHT_MODES) {
     lua_pushinteger(L, 2);
@@ -555,9 +549,9 @@ static int luaModelSetFlightMode(lua_State * L)
         if (idx < 0 || idx >= max_trims) continue;
         int16_t val = luaL_checkinteger(L, -1);
         if (g_model.extendedTrims)
-          val = limit<int16_t>(val, TRIM_EXTENDED_MIN, TRIM_EXTENDED_MAX);
+          val = limit<int16_t>(TRIM_EXTENDED_MIN, val, TRIM_EXTENDED_MAX);
         else
-          val = limit<int16_t>(val, TRIM_MIN, TRIM_MAX);
+          val = limit<int16_t>(TRIM_MIN, val, TRIM_MAX);
         if (idx < max_trims)
           fm->trim[idx].value = val;
       }
@@ -601,14 +595,15 @@ Return input data for given input and line number
  * `curveValue` (number) curve index
  * `carryTrim` deprecated, please use trimSource instead. WARNING: carryTrim was getting negative values (carryTrim = - trimSource)
  * 'trimSource' (number) a positive number representing trim source
+ * 'side' (number) input side (positive, negative or all)
  * 'flightModes' (number) bit-mask of active flight modes
 
-@status current Introduced in 2.0.0, curveType/curveValue/carryTrim added in 2.3, inputName added 2.3.10, flighmode reworked in 2.3.11, broken carryTrim replaced by trimSource in 2.8.1, scale added in 2.10
+@status current Introduced in 2.0.0, curveType/curveValue/carryTrim added in 2.3, inputName added 2.3.10, flighmode reworked in 2.3.11, broken carryTrim replaced by trimSource in 2.8.1, scale added in 2.10, side added in 2.11
 */
 static int luaModelGetInput(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
-  unsigned int idx = luaL_checkunsigned(L, 2);
+  unsigned int chn = luaL_checkinteger(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 2);
   unsigned int first = getFirstInput(chn);
   unsigned int count = getInputsCountFromFirst(chn, first);
   if (idx < count) {
@@ -624,6 +619,7 @@ static int luaModelGetInput(lua_State *L)
     lua_pushtableinteger(L, "curveType", expo->curve.type);
     lua_pushtableinteger(L, "curveValue", expo->curve.value);
     lua_pushtableinteger(L, "trimSource", - expo->trimSource);
+    lua_pushtableinteger(L, "side", expo->mode);
     lua_pushtableinteger(L, "flightModes", expo->flightModes);
   }
   else {
@@ -647,8 +643,8 @@ Insert an Input at specified line
 */
 static int luaModelInsertInput(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
-  unsigned int idx = luaL_checkunsigned(L, 2);
+  unsigned int chn = luaL_checkinteger(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 2);
 
   unsigned int first = getFirstInput(chn);
   unsigned int count = getInputsCountFromFirst(chn, first);
@@ -680,11 +676,14 @@ static int luaModelInsertInput(lua_State *L)
       else if (!strcmp(key, "scale")) {
         expo->scale = luaL_checkinteger(L, -1);
       }
+      else if (!strcmp(key, "side")) {
+        expo->mode = luaL_checkinteger(L, -1);
+      }
       else if (!strcmp(key, "weight")) {
-        expo->weight = luaL_checkinteger(L, -1);
+        expo->weight = luaL_checkunsigned(L, -1);
       }
       else if (!strcmp(key, "offset")) {
-        expo->offset = luaL_checkinteger(L, -1);
+        expo->offset = luaL_checkunsigned(L, -1);
       }
       else if (!strcmp(key, "switch")) {
         expo->swtch = luaL_checkinteger(L, -1);
@@ -693,7 +692,7 @@ static int luaModelInsertInput(lua_State *L)
         expo->curve.type = luaL_checkinteger(L, -1);
       }
       else if (!strcmp(key, "curveValue")) {
-        expo->curve.value = luaL_checkinteger(L, -1);
+        expo->curve.value = luaL_checkunsigned(L, -1);
       }
       else if (!strcmp(key, "trimSource")) {
         expo->trimSource = - luaL_checkinteger(L, -1);
@@ -720,8 +719,8 @@ Delete line from specified input
 */
 static int luaModelDeleteInput(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
-  unsigned int idx = luaL_checkunsigned(L, 2);
+  unsigned int chn = luaL_checkinteger(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 2);
 
   int first = getFirstInput(chn);
   unsigned int count = getInputsCountFromFirst(chn, first);
@@ -800,7 +799,7 @@ Get the number of Mixer lines that the specified Channel has
 */
 static int luaModelGetMixesCount(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
+  unsigned int chn = luaL_checkinteger(L, 1);
   unsigned int count = getMixesCount(chn);
   lua_pushinteger(L, count);
   return 1;
@@ -829,17 +828,19 @@ Get configuration for specified Mix
  * `flightModes` (number) bit-mask of active flight modes
  * `carryTrim` (boolean) carry trim
  * `mixWarn` (number) warning (0 = off, 1 = 1 beep, .. 3 = 3 beeps)
+ * `delayPrec` precision of delay up/down (1 or 10)
  * `delayUp` (number) delay up (time in 1/10 s)
  * `delayDown` (number) delay down
+ * `speedPrec` precision of speed up/down (1 or 10)
  * `speedUp` (number) speed up
  * `speedDown` (number) speed down
 
-@status current Introduced in 2.0.0, parameters below `multiplex` added in 2.0.13
+@status current Introduced in 2.0.0, parameters below `multiplex` added in 2.0.13, `speedPrec` added in 2.10, `delayPrec` added in 2.11
 */
 static int luaModelGetMix(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
-  unsigned int idx = luaL_checkunsigned(L, 2);
+  unsigned int chn = luaL_checkinteger(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 2);
   unsigned int first = getFirstMix(chn);
   unsigned int count = getMixesCountFromFirst(chn, first);
   if (idx < count) {
@@ -856,8 +857,10 @@ static int luaModelGetMix(lua_State *L)
     lua_pushtableinteger(L, "flightModes", mix->flightModes);
     lua_pushtableboolean(L, "carryTrim", mix->carryTrim);
     lua_pushtableinteger(L, "mixWarn", mix->mixWarn);
+    lua_pushtableinteger(L, "delayPrec", mix->delayPrec);
     lua_pushtableinteger(L, "delayUp", mix->delayUp);
     lua_pushtableinteger(L, "delayDown", mix->delayDown);
+    lua_pushtableinteger(L, "speedPrec", mix->speedPrec);
     lua_pushtableinteger(L, "speedUp", mix->speedUp);
     lua_pushtableinteger(L, "speedDown", mix->speedDown);
   }
@@ -882,8 +885,8 @@ Insert a mixer line into Channel
 */
 static int luaModelInsertMix(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
-  unsigned int idx = luaL_checkunsigned(L, 2);
+  unsigned int chn = luaL_checkinteger(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 2);
 
   unsigned int first = getFirstMix(chn);
   unsigned int count = getMixesCountFromFirst(chn, first);
@@ -904,10 +907,18 @@ static int luaModelInsertMix(lua_State *L)
         mix->srcRaw = luaL_checkinteger(L, -1);
       }
       else if (!strcmp(key, "weight")) {
-        mix->weight = luaL_checkinteger(L, -1);
+        int val = luaL_checkinteger(L, -1);
+        SourceNumVal v;
+        v.isSource = (abs(val) >= 1024);
+        v.value = val;
+        mix->weight = v.rawValue;
       }
       else if (!strcmp(key, "offset")) {
-        mix->offset = luaL_checkinteger(L, -1);
+        int val = luaL_checkinteger(L, -1);
+        SourceNumVal v;
+        v.isSource = (abs(val) >= 1024);
+        v.value = val;
+        mix->offset = v.rawValue;
       }
       else if (!strcmp(key, "switch")) {
         mix->swtch = luaL_checkinteger(L, -1);
@@ -916,7 +927,11 @@ static int luaModelInsertMix(lua_State *L)
         mix->curve.type = luaL_checkinteger(L, -1);
       }
       else if (!strcmp(key, "curveValue")) {
-        mix->curve.value = luaL_checkinteger(L, -1);
+        int val = luaL_checkinteger(L, -1);
+        SourceNumVal v;
+        v.isSource = (abs(val) >= 1024);
+        v.value = val;
+        mix->curve.value = v.rawValue;
       }
       else if (!strcmp(key, "multiplex")) {
         mix->mltpx = luaL_checkinteger(L, -1);
@@ -930,11 +945,17 @@ static int luaModelInsertMix(lua_State *L)
       else if (!strcmp(key, "mixWarn")) {
         mix->mixWarn = luaL_checkinteger(L, -1);
       }
+      else if (!strcmp(key, "delayPrec")) {
+        mix->delayPrec = luaL_checkinteger(L, -1);
+      }
       else if (!strcmp(key, "delayUp")) {
         mix->delayUp = luaL_checkinteger(L, -1);
       }
       else if (!strcmp(key, "delayDown")) {
         mix->delayDown = luaL_checkinteger(L, -1);
+      }
+      else if (!strcmp(key, "speedPrec")) {
+        mix->speedPrec = luaL_checkinteger(L, -1);
       }
       else if (!strcmp(key, "speedUp")) {
         mix->speedUp = luaL_checkinteger(L, -1);
@@ -961,8 +982,8 @@ Delete mixer line from specified Channel
 */
 static int luaModelDeleteMix(lua_State *L)
 {
-  unsigned int chn = luaL_checkunsigned(L, 1);
-  unsigned int idx = luaL_checkunsigned(L, 2);
+  unsigned int chn = luaL_checkinteger(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 2);
 
   unsigned int first = getFirstMix(chn);
   unsigned int count = getMixesCountFromFirst(chn, first);
@@ -1004,12 +1025,14 @@ Get Logical Switch parameters
  * `and` (number) AND switch index
  * `delay` (number) delay (time in 1/10 s)
  * `duration` (number) duration (time in 1/10 s)
+ * `state` (boolean) current state of the logical switch
+ * `persistent` (boolean) if true then the state is persistent across reboot of the radio
 
-@status current Introduced in 2.0.0
+@status current Introduced in 2.0.0, state and persistent added in 2.11.2
 */
 static int luaModelGetLogicalSwitch(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_LOGICAL_SWITCHES) {
     LogicalSwitchData * sw = lswAddress(idx);
     lua_newtable(L);
@@ -1019,7 +1042,9 @@ static int luaModelGetLogicalSwitch(lua_State *L)
     lua_pushtableinteger(L, "v3", sw->v3);
     lua_pushtableinteger(L, "and", sw->andsw);
     lua_pushtableinteger(L, "delay", sw->delay);
-    lua_pushtableinteger(L, "duration", sw->duration);
+    lua_pushtableinteger(L, "duration", sw->duration); 
+    lua_pushtableboolean(L, "state", sw->lsState);
+    lua_pushtableboolean(L, "persistent", sw->lsPersist);
   }
   else {
     lua_pushnil(L);
@@ -1042,11 +1067,11 @@ that parameter remains unchanged.
 @notice To set the `and` member (which is Lua keyword)
 use the following syntax: `model.setLogicalSwitch(30, {func=4,v1=1,v2=-99, ["and"]=24})`
 
-@status current Introduced in 2.0.0
+@status current Introduced in 2.0.0, state and persistent added in 2.11.2
 */
 static int luaModelSetLogicalSwitch(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_LOGICAL_SWITCHES) {
     LogicalSwitchData * sw = lswAddress(idx);
     memclear(sw, sizeof(LogicalSwitchData));
@@ -1074,6 +1099,12 @@ static int luaModelSetLogicalSwitch(lua_State *L)
       }
       else if (!strcmp(key, "duration")) {
         sw->duration = luaL_checkinteger(L, -1);
+      }
+      else if (!strcmp(key, "state")) {
+        sw->lsState = lua_toboolean(L, -1);
+      }
+      else if (!strcmp(key, "persistent")) {
+        sw->lsPersist = lua_toboolean(L, -1);
       }
     }
     storageDirty(EE_MODEL);
@@ -1110,7 +1141,7 @@ Get Curve parameters
 */
 static int luaModelGetCurve(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_CURVES) {
     CurveHeader & CurveHeader = g_model.curves[idx];
     lua_newtable(L);
@@ -1191,7 +1222,7 @@ setting a 6-point standard smoothed curve
 */
 static int luaModelSetCurve(lua_State *L)
 {
-  unsigned int curveIdx = luaL_checkunsigned(L, 1);
+  unsigned int curveIdx = luaL_checkinteger(L, 1);
 
   if (curveIdx >= MAX_CURVES) {
     lua_pushinteger(L, 2);
@@ -1251,10 +1282,11 @@ static int luaModelSetCurve(lua_State *L)
     }
   }
   // Check how many points are set
-  uint8_t numPoints=0;
-  do {
-    numPoints++;
-  } while (yPoints[numPoints]!=-127 && numPoints < MAX_POINTS_PER_CURVE);
+  int numPoints = 0;
+  for (numPoints = 0; numPoints < MAX_POINTS_PER_CURVE; numPoints += 1) {
+    if (yPoints[numPoints] == -127)
+      break;
+  }
   newCurveHeader.points = numPoints - 5;
 
   if (numPoints < MIN_POINTS_PER_CURVE || numPoints > MAX_POINTS_PER_CURVE) {
@@ -1360,12 +1392,13 @@ Get Custom Function parameters
  * `mode` (number) mode (only returned only returned if action is **not** play track, sound or script)
  * `param` (number) parameter (only returned only returned if action is **not** play track, sound or script)
  * `active` (number) 0 = disabled, 1 = enabled
+ * `repetition` (number) -1 to 60, range and meaning depend on function
 
 @status current Introduced in 2.0.0, TODO rename function
 */
 static int luaModelGetCustomFunction(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_SPECIAL_FUNCTIONS) {
     CustomFunctionData * cfn = &g_model.customFn[idx];
     lua_newtable(L);
@@ -1380,6 +1413,7 @@ static int luaModelGetCustomFunction(lua_State *L)
       lua_pushtableinteger(L, "param", cfn->all.param);
     }
     lua_pushtableinteger(L, "active", CFN_ACTIVE(cfn));
+    lua_pushtableinteger(L, "repetition", cfn->repeat);
   }
   else {
     lua_pushnil(L);
@@ -1403,7 +1437,7 @@ that parameter remains unchanged.
 */
 static int luaModelSetCustomFunction(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_SPECIAL_FUNCTIONS) {
     CustomFunctionData * cfn = &g_model.customFn[idx];
     memclear(cfn, sizeof(CustomFunctionData));
@@ -1432,6 +1466,9 @@ static int luaModelSetCustomFunction(lua_State *L)
       }
       else if (!strcmp(key, "active")) {
         CFN_ACTIVE(cfn) = luaL_checkinteger(L, -1);
+      }
+      else if (!strcmp(key, "repetition")) {
+        cfn->repeat = luaL_checkinteger(L, -1);
       }
     }
     storageDirty(EE_MODEL);
@@ -1465,7 +1502,7 @@ Get servo parameters
 */
 static int luaModelGetOutput(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_OUTPUT_CHANNELS) {
     LimitData * limit = limitAddress(idx);
     lua_newtable(L);
@@ -1501,7 +1538,7 @@ that parameter remains unchanged.
 */
 static int luaModelSetOutput(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_OUTPUT_CHANNELS) {
     LimitData * limit = limitAddress(idx);
     memclear(limit, sizeof(LimitData));
@@ -1566,8 +1603,8 @@ Example:
 */
 static int luaModelGetGlobalVariable(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
-  unsigned int phase = luaL_checkunsigned(L, 2);
+  unsigned int idx = luaL_checkinteger(L, 1);
+  unsigned int phase = luaL_checkinteger(L, 2);
   if (phase < MAX_FLIGHT_MODES && idx < MAX_GVARS)
     lua_pushinteger(L, getGVarValue(idx, phase));
   else
@@ -1593,11 +1630,86 @@ by truncating everything behind a floating point.
 */
 static int luaModelSetGlobalVariable(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
-  unsigned int phase = luaL_checkunsigned(L, 2);
+  unsigned int idx = luaL_checkinteger(L, 1);
+  unsigned int phase = luaL_checkinteger(L, 2);
   int value = luaL_checkinteger(L, 3);
   if (phase < MAX_FLIGHT_MODES && idx < MAX_GVARS && value >= -GVAR_MAX && value <= GVAR_MAX) {
     SET_GVAR(idx, value, phase);
+    storageDirty(EE_MODEL);
+  }
+  return 0;
+}
+
+/*luadoc
+@name model.getGlobalVariableDetails(index)
+
+@description Returns details about a Global Variable, but not values
+
+@syntax val = model.getGlobalVariableDetails(index)
+@arg index required integer
+@argdesc zero based global variable index, use 0 for GV1, 8 for GV9
+@return table
+@returndesc table with keys - name (string), min (int), max, prec, unit and popup (bool) - if exists
+@apistat 2.11.0 introduced
+*/
+static int luaModelGetGlobalVariableDetails(lua_State *L)
+{
+  unsigned int idx = luaL_checkunsigned(L, 1);
+  if (idx < MAX_GVARS) {
+    lua_newtable(L);
+    lua_pushtablenstring(L, "name", g_model.gvars[idx].name);
+    lua_pushtableinteger(L, "min", GVAR_MIN + g_model.gvars[idx].min);
+    lua_pushtableinteger(L, "max", GVAR_MAX - g_model.gvars[idx].max);
+    lua_pushtableinteger(L, "prec", g_model.gvars[idx].prec);
+    lua_pushtableinteger(L, "unit", g_model.gvars[idx].unit);
+    lua_pushtableboolean(L, "popup", g_model.gvars[idx].popup);
+  }
+  else
+    lua_pushnil(L);
+  return 1;
+}
+
+/*luadoc
+@name model.setGlobalVariableDetails(index, params)
+
+@description Sets details about a Global Variable, but not values
+
+@arg index required integer
+@argdesc zero based global variable index, use 0 for GV1, 8 for GV9
+@arg table params
+@argdesc see model.getGlobalVariableDetails(index) return format for table format.
+@return none
+@apistat 2.11.0 introduced
+
+*/
+static int luaModelSetGlobalVariableDetails(lua_State *L)
+{
+  unsigned int idx = luaL_checkunsigned(L, 1);
+  if (idx < MAX_GVARS) {
+    luaL_checktype(L, -1, LUA_TTABLE);
+    for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1)) {
+      luaL_checktype(L, -2, LUA_TSTRING); // key is string
+      const char * key = luaL_checkstring(L, -2);
+      if (!strcmp(key, "name")) {
+        const char * name = luaL_checkstring(L, -1);
+        strncpy(g_model.gvars[idx].name, name, sizeof(g_model.gvars[idx].name));
+      }
+      if (!strcmp(key, "min")) {
+        g_model.gvars[idx].min = luaL_checkinteger(L, -1) - GVAR_MIN;
+      }
+      if (!strcmp(key, "max")) {
+        g_model.gvars[idx].max = GVAR_MAX - luaL_checkinteger(L, -1);
+      }
+      if (!strcmp(key, "unit")) {
+        g_model.gvars[idx].unit = luaL_checkinteger(L, -1);
+      }
+      if (!strcmp(key, "prec")) {
+        g_model.gvars[idx].prec = luaL_checkinteger(L, -1);
+      }
+      if (!strcmp(key, "popup")) {
+        g_model.gvars[idx].popup = lua_toboolean(L, -1);
+      }
+    }
     storageDirty(EE_MODEL);
   }
   return 0;
@@ -1626,7 +1738,7 @@ Get Telemetry Sensor parameters
 */
 static int luaModelGetSensor(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_TELEMETRY_SENSORS) {
     TelemetrySensor & sensor = g_model.telemetrySensors[idx];
     lua_newtable(L);
@@ -1661,7 +1773,7 @@ Reset Telemetry Sensor parameters
 */
 static int luaModelResetSensor(lua_State *L)
 {
-  unsigned int idx = luaL_checkunsigned(L, 1);
+  unsigned int idx = luaL_checkinteger(L, 1);
   if (idx < MAX_TELEMETRY_SENSORS) {
     telemetryItems[idx].clear();
   }
@@ -1751,6 +1863,7 @@ static int luaModelSetSwashRing(lua_State *L)
 }
 #endif // HELI
 
+extern "C" {
 LROT_BEGIN(modellib, NULL, 0)
   LROT_FUNCENTRY( getInfo, luaModelGetInfo )
   LROT_FUNCENTRY( setInfo, luaModelSetInfo )
@@ -1784,6 +1897,8 @@ LROT_BEGIN(modellib, NULL, 0)
 #if defined (GVARS)
   LROT_FUNCENTRY( getGlobalVariable, luaModelGetGlobalVariable )
   LROT_FUNCENTRY( setGlobalVariable, luaModelSetGlobalVariable )
+  LROT_FUNCENTRY( getGlobalVariableDetails, luaModelGetGlobalVariableDetails )
+  LROT_FUNCENTRY( setGlobalVariableDetails, luaModelSetGlobalVariableDetails )
 #endif
   LROT_FUNCENTRY( getSensor, luaModelGetSensor )
   LROT_FUNCENTRY( resetSensor, luaModelResetSensor )
@@ -1792,3 +1907,4 @@ LROT_BEGIN(modellib, NULL, 0)
   LROT_FUNCENTRY( setSwashRing, luaModelSetSwashRing )
 #endif
 LROT_END(modellib, NULL, 0)
+}

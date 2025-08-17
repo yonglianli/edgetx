@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,8 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _SIMULATORINTERFACE_H_
-#define _SIMULATORINTERFACE_H_
+#pragma once
 
 #include "firmwares/boards.h"
 #include "constants.h"
@@ -33,8 +33,24 @@
 #include <QDir>
 #include <QLibrary>
 #include <QMap>
+#include <QSerialPort>
 
 #define SIMULATOR_INTERFACE_HEARTBEAT_PERIOD    1000  // ms
+
+enum SimulatorTelemetryProtocol {
+  SIMU_TELEMETRY_PROTOCOL_FRSKY_SPORT = 0,
+  SIMU_TELEMETRY_PROTOCOL_FRSKY_HUB,
+  SIMU_TELEMETRY_PROTOCOL_CROSSFIRE,
+  SIMU_TELEMETRY_PROTOCOL_FRSKY_HUB_OOB,
+  SIMU_TELEMETRY_PROTOCOL_COUNT
+};
+
+enum SimulatorSerialEncoding {
+  SERIAL_ENCODING_8N1 = 0,
+  SERIAL_ENCODING_8E2,
+  SERIAL_ENCODING_PXX1_PWM,
+  SERIAL_ENCODING_COUNT
+};
 
 class SimulatorInterface : public QObject
 {
@@ -76,6 +92,8 @@ class SimulatorInterface : public QObject
       CAP_ROTARY_ENC,         // ROTARY_ENCODERS
       CAP_ROTARY_ENC_NAV,     // ROTARY_ENCODER_NAVIGATION
       CAP_TELEM_FRSKY_SPORT,  // TELEMETRY_FRSKY_SPORT
+      CAP_SERIAL_AUX1,        // Does AUX1 exist on this radio?
+      CAP_SERIAL_AUX2,        // Does AUX2 exist on this radio?
       CAP_ENUM_COUNT
     };
 
@@ -147,10 +165,12 @@ class SimulatorInterface : public QObject
     virtual void touchEvent(int type, int x, int y) = 0;
     virtual void lcdFlushed() = 0;
     virtual void setTrainerTimeout(uint16_t ms) = 0;
-    virtual void sendTelemetry(const QByteArray data) = 0;
+    virtual void sendInternalModuleTelemetry(const quint8 protocol, const QByteArray data) = 0;
+    virtual void sendExternalModuleTelemetry(const quint8 protocol, const QByteArray data) = 0;
     virtual void setLuaStateReloadPermanentScripts() = 0;
     virtual void addTracebackDevice(QIODevice * device) = 0;
     virtual void removeTracebackDevice(QIODevice * device) = 0;
+    virtual void receiveAuxSerialData(const quint8 port_num, const QByteArray & data) = 0;
 
   signals:
 
@@ -167,6 +187,13 @@ class SimulatorInterface : public QObject
     void trimRangeChange(quint8 index, qint32 min, qint16 max);
     void gVarValueChange(quint8 index, qint32 value);
     void outputValueChange(int type, quint8 index, qint32 value);
+    void auxSerialSendData(const quint8 port_num, const QByteArray & data);
+    void auxSerialSetEncoding(const quint8 port_num, const quint8 encoding);
+    void auxSerialSetBaudrate(const quint8 port_num, const quint32 baudrate);
+    void auxSerialStart(const quint8 port_num);
+    void auxSerialStop(const quint8 port_num);
+    void txBatteryVoltageChanged(const int voltage);
+    void fsColorChange(quint8 index, qint32 color);
 };
 
 class SimulatorFactory {
@@ -192,7 +219,5 @@ class SimulatorLoader
     typedef SimulatorFactory * (*RegisterSimulator)();
 
     static int registerSimulators(const QDir & dir);
-    static QMap<QString, QLibrary *> registeredSimulators;
+    static QMap<QString, QPair<QString, QLibrary *>> registeredSimulators;
 };
-
-#endif // _SIMULATORINTERFACE_H_

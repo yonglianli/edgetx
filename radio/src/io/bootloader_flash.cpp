@@ -20,16 +20,21 @@
  */
 
 #include <stdio.h>
-#include "opentx.h"
+#include "edgetx.h"
 
 #include "bootloader_flash.h"
 #include "timers_driver.h"
-#include "hal/watchdog_driver.h"
+#include "flash_driver.h"
 
-#if defined(LIBOPENUI)
-  #include "libopenui.h"
-#else
-  #include "libopenui/src/libopenui_file.h"
+#include "hal/watchdog_driver.h"
+#include "os/sleep.h"
+
+#if !defined(LIBOPENUI)
+  #include "lib_file.h"
+#endif
+
+#ifndef BOOTLOADER_ADDRESS
+#define BOOTLOADER_ADDRESS FIRMWARE_ADDRESS
 #endif
 
 bool isBootloader(const char * filename)
@@ -43,7 +48,15 @@ bool isBootloader(const char * filename)
     return false;
   }
 
-  return isBootloaderStart(buffer);
+  // Check firmware is for this radio
+  for (int i = 0; i < 1024; i++) {
+    if (memcmp(buffer + i, FLAVOUR, sizeof(FLAVOUR) - 1) == 0) {
+      if (buffer[i + sizeof(FLAVOUR) - 1] == '-')
+        return isBootloaderStart(buffer);;
+      return false;
+    }
+  }
+  return false;
 }
 
 void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHandler progressHandler)
@@ -55,12 +68,6 @@ void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHand
   pulsesStop();
 
   f_open(&file, filename, FA_READ);
-
-  static uint8_t unlocked = 0;
-  if (!unlocked) {
-    unlocked = 1;
-    unlockFlash();
-  }
 
   UINT flash_size = file.obj.objsize;
   if (flash_size > BOOTLOADER_SIZE) {
@@ -86,7 +93,9 @@ void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHand
       break;
     }
     for (UINT j = 0; j < count; j += FLASH_PAGESIZE) {
-      flashWrite(CONVERT_UINT_PTR(FIRMWARE_ADDRESS + i + j), CONVERT_UINT_PTR(buffer + j));
+      WDG_ENABLE(3000);
+      flashWrite(CONVERT_UINT_PTR(BOOTLOADER_ADDRESS + i + j), CONVERT_UINT_PTR(buffer + j));
+      WDG_ENABLE(WDG_DURATION);
     }
     progressHandler("Bootloader", STR_WRITING, i, flash_size);
 
@@ -94,9 +103,7 @@ void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHand
     if (f_eof(&file)) break;
 
 #if defined(SIMU)
-    // add an artificial delay and check for simu quit
-    if (SIMU_SLEEP_OR_EXIT_MS(30))
-      break;
+    sleep_ms(30);
 #endif
   }
 
@@ -105,12 +112,6 @@ void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHand
   watchdogSuspend(0);
   WDG_RESET();
 
-  if (unlocked) {
-    lockFlash();
-    unlocked = 0;
-  }
-
   f_close(&file);
-
   pulsesStart();
 }
